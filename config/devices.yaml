@@ -1,0 +1,103 @@
+{
+  "stage": {
+    "port": "COM8",
+    "baudrate": 115200,
+    "timeout_s": 10.0,
+    "serial_timeout_s": 0.0,
+    "response_delay_s": 0.1,
+    "initial_x": 5.0,
+    "initial_y": 8.0,
+    "minimum_x": -140.0,
+    "maximum_x": 140.0,
+    "minimum_y": -100.0,
+    "maximum_y": 100.0,
+    "pulses_x": 40000,
+    "pulses_y": 80000,
+    "speed_x": 700,
+    "acceleration_x": 100,
+    "deceleration_x": 100,
+    "speed_y": 70,
+    "acceleration_y": 100,
+    "deceleration_y": 100,
+    "hardware_zero_tolerance_pulses": 10
+  },
+  "position_sensor": {
+    "port": "COM10",
+    "baudrate": 9600,
+    "timeout_s": 10.0,
+    "serial_timeout_s": 0.0,
+    "response_delay_s": 0.2,
+    "trigger_x": 0.0,
+    "trigger_y": 0.0
+  },
+  "gripper": {
+    "port": "COM7",
+    "baudrate": 115200,
+    "timeout_s": 10.0,
+    "serial_timeout_s": 0.0,
+    "response_delay_s": 0.1,
+    "poll_interval_s": 0.1,
+    "minimum_z": 0.0,
+    "maximum_z": 100.0,
+    "z_pulses_per_100": 15000
+  },
+  "pipette": {
+    "port": "COM9",
+    "baudrate": 115200,
+    "timeout_s": 10.0,
+    "serial_timeout_s": 0.0,
+    "response_delay_s": 0.1,
+    "poll_interval_s": 0.1,
+    "minimum_z": 0.0,
+    "maximum_z": 100.0,
+    "z_pulses_per_100": 150000,
+    "capacity_ul": 1000.0
+  },
+  "valve": {
+    "port": "COM13",
+    "baudrate": 38400,
+    "timeout_s": 10.0,
+    "serial_timeout_s": 0.0,
+    "response_delay_s": 0.1
+  },
+  "spin_coater": {
+    "port": "COM14",
+    "baudrate": 115200,
+    "timeout_s": 10.0,
+    "serial_timeout_s": 0.0,
+    "response_delay_s": 0.2,
+    "max_rpm": 10000,
+    "electronic_gear_ratio": 10000,
+    "maximum_single_revolution_position": 8388608,
+    "glass_origin_position": 3458608,
+    "home_motion_time_s": 2.0,
+    "home_poll_start_delay_s": 1.5,
+    "home_poll_interval_s": 0.25,
+    "home_position_tolerance_counts": 10000,
+    "continuous_failure_timeout_s": 3.0,
+    "retry_interval_s": 0.1,
+    "communication_compensation_s": 0.6
+  },
+  "heater": {
+    "slots": 8,
+    "maximum_temperature_c": 200.0,
+    "hardware_protocol": null
+  },
+  "vacuum_station": {
+    "port": "COM15",
+    "baudrate": 9600,
+    "timeout_s": 10.0,
+    "serial_timeout_s": 0.0,
+    "response_delay_s": 0.2,
+    "open_position": 0,
+    "close_position": 250,
+    "initial_speed": 10,
+    "open_speed": -120,
+    "close_speed": 105,
+    "acceleration_time": 50,
+    "deceleration_time": 50,
+    "command_delay_s": 0.2,
+    "open_motion_time_s": 2.8,
+    "close_motion_time_s": 3.3
+  }
+}

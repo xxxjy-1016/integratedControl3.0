@@ -1,0 +1,99 @@
+{
+  "units": {
+    "linear": "percent_of_axis_travel",
+    "rotation": "degrees"
+  },
+  "stage_origin_offset": {
+    "x": -0.0075,
+    "y": -0.02
+  },
+  "safe_pose": {
+    "gripper_z": 1.0,
+    "pipette_z": 0.0
+  },
+  "stations": {
+    "origin": {"x": 0.0, "y": 0.0, "gripper_z": 0.0, "pipette_z": 0.0},
+    "spin_coater": {
+      "gripper": {"x": 48.5, "y": 64.5, "gripper_z": 87.1, "pipette_z": 0.0},
+      "gripper_wait": {"x": 48.5, "y": 64.5, "gripper_z": 0.0, "pipette_z": 0.0},
+      "pipette": {"x": 57.2, "y": 90.0, "gripper_z": 0.0, "pipette_z": 18.0},
+      "pipette_wait": {"x": 57.2, "y": 90.0, "gripper_z": 0.0, "pipette_z": 0.0},
+      "pick_and_drop_offset_z": 0.5
+    },
+    "waste": {"x": 30.0, "y": 0.0, "gripper_z": 0.0, "pipette_z": 0.0},
+    "bottles": [
+      {
+        "id": 1,
+        "gripper": {"x": 48.2, "y": 12.2, "gripper_z": 80.0, "pipette_z": 0.0},
+        "pipette": {"x": 58.0, "y": 36.0, "gripper_z": 0.0, "pipette_z": 45.0},
+        "rotation": 720.0
+      },
+      {
+        "id": 2,
+        "gripper": {"x": 40.8, "y": 11.7, "gripper_z": 80.0, "pipette_z": 0.0},
+        "pipette": {"x": 49.5, "y": 34.0, "gripper_z": 0.0, "pipette_z": 45.0},
+        "rotation": 720.0
+      },
+      {
+        "id": 3,
+        "gripper": {"x": 41.6, "y": 26.7, "gripper_z": 80.0, "pipette_z": 0.0},
+        "pipette": {"x": 49.2, "y": 50.0, "gripper_z": 0.0, "pipette_z": 45.0},
+        "rotation": 720.0
+      }
+    ],
+    "heater": [
+      {"step": 1, "position": 1, "x": 0.0, "y": 6.0, "gripper_z": 53.9, "pipette_z": 0.0},
+      {"step": 2, "position": 1, "x": 0.0, "y": 41.0, "gripper_z": 53.9, "pipette_z": 0.0},
+      {"step": 1, "position": 2, "x": 8.3, "y": 6.0, "gripper_z": 53.9, "pipette_z": 0.0},
+      {"step": 2, "position": 2, "x": 8.3, "y": 41.0, "gripper_z": 53.9, "pipette_z": 0.0},
+      {"step": 1, "position": 3, "x": 0.0, "y": 19.0, "gripper_z": 53.9, "pipette_z": 0.0},
+      {"step": 2, "position": 3, "x": 0.0, "y": 54.0, "gripper_z": 53.9, "pipette_z": 0.0},
+      {"step": 1, "position": 4, "x": 8.3, "y": 19.0, "gripper_z": 53.9, "pipette_z": 0.0},
+      {"step": 2, "position": 4, "x": 8.3, "y": 54.0, "gripper_z": 53.9, "pipette_z": 0.0}
+    ],
+    "vacuum_station": {"x": 25.0, "y": 100.0, "gripper_z": 90.6, "pipette_z": 0.0}
+  },
+  "glass_platform": {
+    "pick_and_put_offset_z": 0.5,
+    "slots": [
+      {"id": 1, "x": 95.3, "y": 19.0, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 2, "x": 88.7, "y": 19.0, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 3, "x": 79.1, "y": 19.0, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 4, "x": 72.6, "y": 19.0, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 5, "x": 95.5, "y": 32.0, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 6, "x": 88.7, "y": 32.0, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 7, "x": 79.2, "y": 32.0, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 8, "x": 72.5, "y": 32.0, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 9, "x": 95.5, "y": 45.5, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 10, "x": 88.7, "y": 45.5, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 11, "x": 79.1, "y": 45.5, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 12, "x": 72.6, "y": 45.5, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 13, "x": 95.5, "y": 59.3, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 14, "x": 88.7, "y": 59.3, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 15, "x": 79.3, "y": 59.3, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 16, "x": 72.6, "y": 59.3, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 17, "x": 95.7, "y": 73.2, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 18, "x": 88.9, "y": 73.2, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 19, "x": 79.4, "y": 73.2, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 20, "x": 72.7, "y": 73.2, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 21, "x": 95.5, "y": 86.7, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 22, "x": 88.9, "y": 86.2, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 23, "x": 79.4, "y": 86.2, "gripper_z": 87.5, "pipette_z": 0.0},
+      {"id": 24, "x": 72.9, "y": 86.7, "gripper_z": 87.5, "pipette_z": 0.0}
+    ]
+  },
+  "tip_rack": {
+    "rows": [1, 2, 3, 4, 5],
+    "columns": [2, 3, 4, 5, 6],
+    "reference": {"row": 3, "column": 4, "x": 101.3, "y": 4.8},
+    "column_step_x": -2.2,
+    "row_step_y": 4.5,
+    "pipette_z": 93.0,
+    "attach_overtravel_z": 2.0,
+    "return_depth_offset_z": -10.0
+  },
+  "gripper": {
+    "holding_opening": 30.0,
+    "glass_release_opening": 64.0
+  }
+}

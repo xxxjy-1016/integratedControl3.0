@@ -1,0 +1,4 @@
+{
+  "homing_step": 1.0,
+  "homing_max_steps": 500
+}
