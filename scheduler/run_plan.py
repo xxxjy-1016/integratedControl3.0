@@ -40,7 +40,10 @@ import os
 import sys
 import time
 
-import glass_heat_scheduler as G
+try:  # 作为 scheduler 包的一部分被主程序导入时
+    from . import glass_heat_scheduler as G
+except ImportError:  # 在 scheduler 目录内直接运行（python run_plan.py）
+    import glass_heat_scheduler as G
 
 DEFAULT_ROBOT_LIB = os.environ.get("ROBOT_LIB", "robot_lib")
 COUNTDOWN_SEC = 3.0
@@ -127,8 +130,50 @@ def run_simulate(plan: G.Plan) -> int:
     return 0
 
 
-def run_realtime(plan: G.Plan, lib_name: str, log_path: str | None) -> int:
+def execute_plan(
+    plan: G.Plan,
+    step1,
+    step2,
+    *,
+    mode: str = "simulate",
+    log_path: str | None = None,
+) -> int:
+    """按计划执行，step1 / step2 由调用方直接注入（可调用对象）。
+
+    这是调度器暴露给主程序（integrated_control）的**推荐集成入口**：主程序把
+    绑定好设备上下文的 zksz step1/step2 传进来即可，无需把外部库做成可 import
+    的模块。
+
+    mode:
+      "dry"       只打印指令序列，不调用任何函数；
+      "simulate"  用调度器内置物理校验模拟器逐步重放（不调用传入的 step1/step2）；
+      "realtime"  按真实时钟调用传入的 step1/step2，带漂移安全中止。
+    """
+    if mode == "dry":
+        return run_dry(plan)
+    if mode == "simulate":
+        return run_simulate(plan)
+    return _run_realtime(plan, step1, step2, log_path)
+
+
+def run_realtime(plan: G.Plan, lib_name: str, log_path: str | None = None) -> int:
+    """按真实时钟把计划派发给外部库的 step1/step2（通过模块名加载）。
+
+    如需直接注入可调用对象（例如主程序把绑定好设备上下文的 step1/step2
+    传进来），请改用 execute_plan()。
+    """
     step1, step2 = load_external_steppers(lib_name)
+    return _run_realtime(plan, step1, step2, log_path)
+
+
+def _run_realtime(plan: G.Plan, step1, step2, log_path: str | None) -> int:
+    """run_realtime 的核心：按计划时刻调用已注入的 step1/step2 可调用对象。
+
+    step1/step2 必须满足调度器的黑盒契约：
+      - 同步阻塞调用，签名 (n, m) -> None；
+      - 各自阻塞 time_step1 / time_step2 秒（真实硬件控制的常见行为）；
+      - 若立即返回，实时模式仍按计划时刻派发，只是无法监控漂移。
+    """
     budgets = drift_budgets(plan)
     cmds = plan.commands
     drift = 0.0
@@ -138,7 +183,9 @@ def run_realtime(plan: G.Plan, lib_name: str, log_path: str | None) -> int:
         print(msg)
         log_lines.append(msg)
 
-    log(f"\n[realtime] 外部库 = '{lib_name}'，{len(cmds)} 条指令，"
+    src1 = f"{getattr(step1, '__module__', '?')}.{getattr(step1, '__name__', '?')}"
+    src2 = f"{getattr(step2, '__module__', '?')}.{getattr(step2, '__name__', '?')}"
+    log(f"\n[realtime] step1/step2 = {src1} / {src2}，{len(cmds)} 条指令，"
         f"makespan={plan.makespan:.3f}s，3 秒后开始（Ctrl+C 取消）")
     try:
         time.sleep(COUNTDOWN_SEC)

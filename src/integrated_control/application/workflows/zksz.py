@@ -1,10 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import time
-from typing import Callable, cast
+from typing import Any, Callable, cast
 
 from integrated_control.bootstrap import ApplicationContext
 from integrated_control.devices.gripper import Gripper
+from integrated_control.devices.heater import Heater
 from integrated_control.devices.pipette import Pipette
 from integrated_control.devices.spin_coater import SpinCoater
 from integrated_control.devices.stage import Stage
@@ -80,91 +81,22 @@ class ZkszWorkflow:
             VacuumStation, devices.get("vacuum_station")
         )
         self._valve = cast(Valve, devices.get("valve"))
+        self._heater = cast(Heater, devices.get("heater"))
+        self._coordinates = application.coordinates
         self._sleep = sleep
         self._require_bottle_cap_detection = require_bottle_cap_detection
         self._require_liquid_detection = require_liquid_detection
 
     def run(self) -> ActionResult:
+        """单片完整 zksz 流程（含退火等待）。
+
+        等价于 _prepare_one（制备 + 上加热台）-> 退火 -> _return_one（下加热台 + 放回）。
+        """
         try:
-            print("取玻璃...")
-            self._pick_glass(GLASS_SLOT_2)
-            print("放到旋涂仪...")
-            self._put_glass(SPIN_COATER_GRIPPER)
-
-            print("取吸头 1...")
-            self._pick_tip(TIP_1, "zksz-tip-1")
-
-            print("开1号瓶...")
-            self._open_bottle(BOTTLE_1_GRIPPER, BOTTLE_1_ROTATION)
-
-            print("吸 SAM...")
-            self._aspirate(BOTTLE_1_PIPETTE, 100.0)
-
-            print("关1号瓶...")
-            self._close_bottle(BOTTLE_1_GRIPPER)
-
-            print("滴 SAM...")
-            self._dispense_all(SPIN_COATER_PIPETTE)
-
-            print("旋涂 SAM...")
-            recipe = [
-                SpinStep(
-                    rpm=5000,
-                    duration_s=10.0,
-                    acceleration_rpm_s=5000.0,
-                )
-            ]
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                spin_future = executor.submit(self._spin_coater.run, recipe)
-                self._sleep(1.0)
-
-                print("放回吸头 1...")
-                self._drop_tip(TIP_1)
-
-                print("等待 SAM 旋涂结束...")
-                self._require("旋涂 SAM", spin_future.result())
-            self._sleep(1.0)
-
-            print("打开真空泵盖子...")
-            self._require("打开真空泵盖子", self._vacuum_station.open_cover())
-            self._sleep(1.0)
-
-            print("从旋涂仪取玻璃...")
-            self._pick_glass(SPIN_COATER_GRIPPER)
-            print("放到真空泵...")
-            self._put_glass(VACUUM_STATION)
-
-            print("关闭真空泵盖子...")
-            self._require("关闭真空泵盖子", self._vacuum_station.close_cover())
-            self._sleep(1.0)
-
-            print("打开电磁阀...")
-            self._require("打开电磁阀", self._valve.open())
-            self._sleep(10.0)
-            print("关闭电磁阀...")
-            self._require("关闭电磁阀", self._valve.close())
-            self._sleep(1.0)
-
-            print("打开真空泵盖子...")
-            self._require("打开真空泵盖子", self._vacuum_station.open_cover())
-            self._sleep(1.0)
-
-            print("从真空泵取玻璃...")
-            self._pick_glass(VACUUM_STATION)
-            print("放到退火台...")
-            self._put_glass(HEATER)
-
-            print("关闭真空泵盖子...")
-            self._require("关闭真空泵盖子", self._vacuum_station.close_cover())
-            self._sleep(1.0)
-
+            self._prepare_one(GLASS_SLOT_2, HEATER)
             print("退火 20 分钟...（本次为模拟实验，模拟退火10秒）")
             self._sleep(10.0)
-
-            print("从退火台取玻璃...")
-            self._pick_glass(HEATER)
-            print("放回原平台...")
-            self._put_glass(GLASS_SLOT_2)
+            self._return_one(GLASS_SLOT_2, HEATER)
         except WorkflowFailure as exc:
             return ActionResult.failed("ZKSZ_WORKFLOW_FAILED", str(exc))
         except Exception as exc:
@@ -175,6 +107,163 @@ class ZkszWorkflow:
 
         print("zksz 流程完成。")
         return ActionResult.done("zksz workflow completed")
+
+    def _prepare_one(self, glass_pose: ProcessPose, heater_pose: ProcessPose) -> None:
+        """制备一片玻璃（取料 -> 旋涂 -> 真空闪蒸）并放到加热器上。
+
+        对应调度器（scheduler）的 step1：本方法结束时玻璃落到加热器上，退火等待
+        （在台时间）由调度器安排在 step1 与 step2 之间，不在此处处理。
+        """
+        print("取玻璃...")
+        self._pick_glass(glass_pose)
+        print("放到旋涂仪...")
+        self._put_glass(SPIN_COATER_GRIPPER)
+
+        print("取吸头 1...")
+        self._pick_tip(TIP_1, "zksz-tip-1")
+
+        print("开1号瓶...")
+        self._open_bottle(BOTTLE_1_GRIPPER, BOTTLE_1_ROTATION)
+
+        print("吸 SAM...")
+        self._aspirate(BOTTLE_1_PIPETTE, 100.0)
+
+        print("关1号瓶...")
+        self._close_bottle(BOTTLE_1_GRIPPER)
+
+        print("滴 SAM...")
+        self._dispense_all(SPIN_COATER_PIPETTE)
+
+        print("旋涂 SAM...")
+        recipe = [
+            SpinStep(
+                rpm=5000,
+                duration_s=10.0,
+                acceleration_rpm_s=5000.0,
+            )
+        ]
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            spin_future = executor.submit(self._spin_coater.run, recipe)
+            self._sleep(1.0)
+
+            print("放回吸头 1...")
+            self._drop_tip(TIP_1)
+
+            print("等待 SAM 旋涂结束...")
+            self._require("旋涂 SAM", spin_future.result())
+        self._sleep(1.0)
+
+        print("打开真空泵盖子...")
+        self._require("打开真空泵盖子", self._vacuum_station.open_cover())
+        self._sleep(1.0)
+
+        print("从旋涂仪取玻璃...")
+        self._pick_glass(SPIN_COATER_GRIPPER)
+        print("放到真空泵...")
+        self._put_glass(VACUUM_STATION)
+
+        print("关闭真空泵盖子...")
+        self._require("关闭真空泵盖子", self._vacuum_station.close_cover())
+        self._sleep(1.0)
+
+        print("打开电磁阀...")
+        self._require("打开电磁阀", self._valve.open())
+        self._sleep(10.0)
+        print("关闭电磁阀...")
+        self._require("关闭电磁阀", self._valve.close())
+        self._sleep(1.0)
+
+        print("打开真空泵盖子...")
+        self._require("打开真空泵盖子", self._vacuum_station.open_cover())
+        self._sleep(1.0)
+
+        print("从真空泵取玻璃...")
+        self._pick_glass(VACUUM_STATION)
+        print("放到退火台...")
+        self._put_glass(heater_pose)
+
+        print("关闭真空泵盖子...")
+        self._require("关闭真空泵盖子", self._vacuum_station.close_cover())
+        self._sleep(1.0)
+
+    def _return_one(self, glass_pose: ProcessPose, heater_pose: ProcessPose) -> None:
+        """从加热器取回玻璃，放回原料台原位。
+
+        对应调度器（scheduler）的 step2：本方法开始时玻璃离开加热器。
+        """
+        print("从退火台取玻璃...")
+        self._pick_glass(heater_pose)
+        print("放回原平台...")
+        self._put_glass(glass_pose)
+
+    # ---- 批量制备：step1 / step2 与调度器（scheduler）对齐 -----------------
+
+    def glass_pose(self, n: int) -> ProcessPose:
+        """把调度器玻璃片编号 n（0-based）映射为原料台槽位坐标。"""
+        slots = self._coordinates.get("glass_platform", {}).get("slots", [])
+        if not 0 <= n < len(slots):
+            raise WorkflowFailure(
+                "解析玻璃槽位坐标",
+                ActionResult.failed(
+                    "GLASS_SLOT_OUT_OF_RANGE",
+                    f"玻璃片编号 {n} 越界（共 {len(slots)} 个槽位）",
+                ),
+            )
+        slot = slots[n]
+        return ProcessPose(
+            float(slot["x"]),
+            float(slot["y"]),
+            float(slot.get("gripper_z", 0.0)),
+            float(slot.get("pipette_z", 0.0)),
+        )
+
+    def heater_pose(self, m: int) -> ProcessPose:
+        """把调度器加热器编号 m（1-based）映射为加热工位坐标。"""
+        heaters = self._coordinates.get("stations", {}).get("heater", [])
+        index = m - 1
+        if not 0 <= index < len(heaters):
+            raise WorkflowFailure(
+                "解析加热工位坐标",
+                ActionResult.failed(
+                    "HEATER_SLOT_OUT_OF_RANGE",
+                    f"加热器编号 {m} 越界（共 {len(heaters)} 个工位）",
+                ),
+            )
+        heater = heaters[index]
+        return ProcessPose(
+            float(heater["x"]),
+            float(heater["y"]),
+            float(heater.get("gripper_z", 0.0)),
+            float(heater.get("pipette_z", 0.0)),
+        )
+
+    def step1(self, n: int, m: int) -> None:
+        """调度器 step1：制备第 n 片玻璃并放到第 m 个加热器上。
+
+        同步阻塞直到完成；结束时玻璃落到加热器上（退火等待由调度器安排在
+        step1 与 step2 之间）。签名 (n, m) -> None 满足 scheduler 的黑盒契约。
+        """
+        glass = self.glass_pose(n)
+        heater = self.heater_pose(m)
+        self._prepare_one(glass, heater)
+        self._require(
+            "登记加热台占用",
+            self._heater.place(m, f"glass-{n}"),
+        )
+
+    def step2(self, n: int, m: int) -> None:
+        """调度器 step2：从第 m 个加热器取第 n 片玻璃，放回原料台。
+
+        同步阻塞直到完成；开始时玻璃离开加热器。签名 (n, m) -> None 满足
+        scheduler 的黑盒契约。
+        """
+        glass = self.glass_pose(n)
+        heater = self.heater_pose(m)
+        self._require(
+            "登记加热台释放",
+            self._heater.remove(m),
+        )
+        self._return_one(glass, heater)
 
     def _move_to(self, pose: ProcessPose) -> None:
         self._move_safe()

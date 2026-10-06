@@ -127,3 +127,36 @@ export ROBOT_LIB=my_robot_module                        # 或环境变量
 ```bash
 python _crosscheck.py    # 输出 "总用例 93  失败 0" 即通过
 ```
+
+## 与主程序（integrated_control）对接
+
+调度算法本身无需改动。主程序通过 `run_plan.execute_plan` 把 zksz 工艺的
+`step1` / `step2` 作为可调用对象注入执行器，即可批量制备产品。约定语义：
+
+- `step1(n, m)` = 制备第 n 片玻璃（取料 → 旋涂 → 真空闪蒸）并放到第 m 个加热器；
+- `step2(n, m)` = 从第 m 个加热器取第 n 片玻璃，放回原料台。
+
+退火（在台时间）落在 step1 结束与 step2 开始之间，由调度器统一安排，因此
+step1/step2 内部**不含退火等待**。
+
+```python
+from scheduler.glass_heat_scheduler import Params, solve
+from scheduler.run_plan import execute_plan
+
+plan = solve(Params(time_step1=100.0, time_step2=20.0,
+                    heat_time_min=1200.0, heat_time_max=1210.0,
+                    num_heater=8, num_glass=24))
+# 主程序侧绑定好设备上下文的 step1/step2：
+#   workflow = ZkszWorkflow(application)
+#   step1, step2 = workflow.step1, workflow.step2
+execute_plan(plan, step1, step2, mode="realtime")   # 或 "simulate" / "dry"
+```
+
+`execute_plan(plan, step1, step2, *, mode, log_path)` 是推荐集成入口：它直接
+接收可调用对象，不再要求外部库是可 import 的模块。`run_plan.py` 原来的
+`--robot-lib` 模块名方式仍保留，供命令行使用。
+
+主程序侧的完整封装见
+`src/integrated_control/application/workflows/batch_zksz.py` 的
+`run_batch_zksz`。
+
