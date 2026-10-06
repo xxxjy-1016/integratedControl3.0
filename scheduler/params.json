@@ -1,0 +1,16 @@
+{
+  "params": {
+    "time_step1": 100.0,
+    "time_step2": 20.0,
+    "heat_time_min": 1200.0,
+    "heat_time_max": 1210.0,
+    "num_heater": 8,
+    "num_glass": 24,
+    "heat_measure": "until_pickup"
+  },
+  "solver": {
+    "method": "auto",
+    "beam_width": 800,
+    "time_limit": 30.0
+  }
+}
