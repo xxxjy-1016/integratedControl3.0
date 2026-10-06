@@ -26,6 +26,7 @@
 - 旋涂仪回零和配方执行；
 - 真空腔盖与独立电磁阀控制；
 - `zksz` 完整工艺工作流；
+- `zksz` 批量制备（scheduler 排程 + step1/step2 驱动）；
 - 模拟设备模式；
 - 面向单设备联调的交互式命令行。
 
@@ -44,7 +45,8 @@ integratedControl3.0/
 │   ├── logging_config.py           # 标准日志配置预留
 │   ├── application/
 │   │   ├── calibration/            # 平台传感器回零服务
-│   │   ├── workflows/zksz.py       # zksz 工艺流程和当前工艺坐标
+│   │   ├── workflows/zksz.py       # zksz 单片工艺流程和当前工艺坐标
+│   │   ├── workflows/batch_zksz.py # zksz 批量制备（对接 scheduler）
 │   │   ├── controller.py           # 系统启动、回零和关闭
 │   │   ├── device_diagnostics.py   # 人工调试用设备控制
 │   │   ├── device_manager.py       # 设备注册和生命周期管理
@@ -147,6 +149,38 @@ integrated-control-debug --mode native_hardware
 ```
 
 真机模式会在连接前要求输入 `MOVE`。进入调试器后输入 `help` 可以查看平台、夹爪、移液器、旋涂仪、真空腔盖和电磁阀命令。
+
+## zksz 批量制备
+
+`workflows/batch_zksz.py` 把 `scheduler/` 子项目（机械臂玻璃片加热调度器）与主程序
+串联起来，实现一次排程、批量制备多片玻璃：
+
+```python
+from integrated_control.bootstrap import build_application
+from integrated_control.application.workflows import BatchParams, run_batch_zksz
+
+application = build_application(mode="simulation")  # 真机改为 native_hardware
+application.controller.start()
+plan = run_batch_zksz(
+    application,
+    batch=BatchParams(
+        time_step1=100.0,       # step1（制备 + 上加热台）估算耗时（秒）
+        time_step2=20.0,        # step2（下加热台 + 放回）估算耗时（秒）
+        heat_time_min=1200.0,   # 退火在台时间下界（秒）
+        heat_time_max=1210.0,   # 退火在台时间上界（秒）
+        num_heater=8,           # 加热器数量（默认从 coordinates.yaml 推导）
+        num_glass=24,           # 玻璃片总数（默认从 coordinates.yaml 推导）
+    ),
+    mode="realtime",            # simulate=快速验证排程；realtime=真实驱动设备
+)
+application.controller.shutdown()
+```
+
+- `step1(n, m)` = 制备第 n 片玻璃并放到第 m 个加热器；`step2(n, m)` = 从第 m 个
+  加热器取第 n 片玻璃放回原料台；退火等待由调度器安排在两步之间。
+- 玻璃槽位、加热工位坐标取自 `config/coordinates.yaml`（`glass_platform.slots`
+  与 `stations.heater`）。
+- 调度算法位于 `scheduler/glass_heat_scheduler.py`，接口说明见 `scheduler/README.md`。
 
 ## 平台回零与状态文件
 
