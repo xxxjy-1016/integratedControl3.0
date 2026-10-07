@@ -9,7 +9,9 @@ from integrated_control.infrastructure.simulation import (
 
 
 class HomingServiceTests(unittest.TestCase):
+    """Group checks for homing service tests."""
     def test_homing_finds_both_sensor_origins(self) -> None:
+        """Check homing finds both sensor origins."""
         stage = SimulatedStage(initial_x=3.0, initial_y=4.0)
         sensor = SimulatedPositionSensor(stage, trigger_x=0.0, trigger_y=0.0)
         stage.initialize()
@@ -24,6 +26,7 @@ class HomingServiceTests(unittest.TestCase):
         self.assertEqual(0.0, stage.get_raw_position("y"))
 
     def test_failed_homing_restores_previous_offset(self) -> None:
+        """Check failed homing restores previous offset."""
         stage = SimulatedStage(initial_x=10.0, initial_y=10.0)
         stage.set_offset("x", 2.5)
         sensor = SimulatedPositionSensor(stage, trigger_x=-100.0, trigger_y=0.0)

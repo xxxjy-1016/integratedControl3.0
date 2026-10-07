@@ -15,28 +15,64 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class BatchZkszTests(unittest.TestCase):
-    def test_batch_schedule_is_feasible_and_covers_all_glass(self) -> None:
-        application = build_application(PROJECT_ROOT, mode="simulation")
-        batch = BatchParams(
-            time_step1=2.0,
-            time_step2=1.0,
-            heat_time_min=5.0,
-            heat_time_max=12.0,
-            num_heater=2,
-            num_glass=5,
-        )
-        with redirect_stdout(io.StringIO()):
-            plan = run_batch_zksz(application, batch=batch, mode="simulate")
+    """Group checks for batch zksz tests."""
+    def test_process_parameters_are_validated_at_construction(self):
+        """Check process parameters are validated at construction."""
+        invalid = [
+            {"time_step1": 0}, {"time_step2": -1}, {"time_step1": float("nan")},
+            {"heat_time_max": float("inf")}, {"heat_time_min": -1},
+            {"heat_time_min": 10, "heat_time_max": 9}, {"time_step1": "2"},
+            {"num_glass": -1}, {"num_glass": 1.5}, {"num_glass": True},
+            {"num_heater": 0}, {"num_heater": False},
+            {"method": "unknown"}, {"beam_width": 0}, {"time_limit": float("nan")},
+        ]
+        for values in invalid:
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                BatchParams(**values)
 
-        self.assertTrue(plan.feasible, plan.errors)
-        step1_cmds = [c for c in plan.commands if c.kind == "step1"]
-        step2_cmds = [c for c in plan.commands if c.kind == "step2"]
-        self.assertEqual(5, len(step1_cmds))
-        self.assertEqual(5, len(step2_cmds))
-        self.assertEqual(set(range(5)), {c.n for c in step1_cmds})
-        self.assertEqual(set(range(5)), {c.n for c in step2_cmds})
+    def test_counts_resolve_from_coordinates_and_are_validated(self):
+        """Check counts resolve from coordinates and are validated."""
+        unresolved = BatchParams()
+        resolved = unresolved.resolve({"glass_platform": {"slots": [1, 2, 3]},
+                                       "stations": {"heater": [1, 2]}})
+        self.assertIsNone(unresolved.num_glass)
+        self.assertEqual(3, resolved.num_glass)
+        self.assertEqual(2, resolved.num_heater)
+        with self.assertRaises(ValueError):
+            unresolved.resolve({})
+        explicit = BatchParams(num_glass=0, num_heater=1).resolve({})
+        self.assertEqual(0, explicit.num_glass)
+        self.assertEqual(1, explicit.num_heater)
+
+    def test_parameter_helpers_preserve_process_meaning(self):
+        """Check parameter helpers preserve process meaning."""
+        batch = BatchParams(time_step2=3, heat_time_min=5, heat_time_max=8,
+                            num_glass=2, num_heater=1)
+        self.assertEqual(3, batch.slack)
+        self.assertNotIn("method", batch.to_dict())
+        self.assertEqual(3, batch.to_dict()["time_step2"])
+
+    def test_online_batch_receives_batchparams_without_old_params_conversion(self):
+        """Check online batch receives batchparams without old params conversion."""
+        from unittest.mock import patch
+        from integrated_control.application.scheduler.decision_preview import OnlineTiming
+        application = build_application(PROJECT_ROOT, mode="simulation")
+        batch = BatchParams(time_step1=2, time_step2=1, heat_time_min=5,
+                            heat_time_max=12, num_glass=1, num_heater=1)
+        timing = OnlineTiming(2, 1, 5, 12, 2, 2, 0, 0)
+        with patch("integrated_control.application.workflows.batch_zksz._run_experiment") as run:
+            run_batch_zksz(application, batch=batch, mode="online", online_timing=timing)
+        self.assertIsInstance(run.call_args.args[1], BatchParams)
+        self.assertEqual(batch, run.call_args.args[1])
+
+    def test_removed_modes_rejected_before_device_access(self):
+        """Check removed modes rejected before device access."""
+        for mode in ("dry", "simulate", "realtime"):
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                run_batch_zksz(None, mode=mode)
 
     def test_step1_and_step2_drive_simulated_devices(self) -> None:
+        """Check step1 and step2 drive simulated devices."""
         application = build_application(PROJECT_ROOT, mode="simulation")
         self.assertTrue(application.controller.start().success)
         workflow = ZkszWorkflow(application, sleep=lambda _seconds: None)
@@ -54,6 +90,7 @@ class BatchZkszTests(unittest.TestCase):
         application.controller.shutdown()
 
     def test_pose_mapping_uses_configured_coordinates(self) -> None:
+        """Check pose mapping uses configured coordinates."""
         application = build_application(PROJECT_ROOT, mode="simulation")
         workflow = ZkszWorkflow(application, sleep=lambda _seconds: None)
 

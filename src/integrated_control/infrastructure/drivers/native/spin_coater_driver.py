@@ -13,6 +13,7 @@ from integrated_control.infrastructure.transports.modbus_rtu import ModbusRtuCli
 
 @dataclass(frozen=True)
 class SpinCoaterDriverConfig:
+    """Store configuration values for spin coater driver."""
     max_rpm: int = 10000
     electronic_gear_ratio: int = 10000
     maximum_single_revolution_position: int = 8388608
@@ -24,6 +25,7 @@ class SpinCoaterDriverConfig:
     communication_compensation_s: float = 0.6
 
     def __post_init__(self) -> None:
+        """Validate and normalize the initialized spin coater driver config fields."""
         if self.maximum_single_revolution_position <= 0:
             raise ValueError("Single-revolution counts must be positive")
         if not 0 <= self.glass_origin_position < self.maximum_single_revolution_position:
@@ -72,6 +74,7 @@ class SpinCoaterDriver(SpinCoater):
         *,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        """Initialize spin coater driver dependencies and internal state."""
         self._client = client
         self._config = config or SpinCoaterDriverConfig()
         self._sleep = sleep
@@ -84,9 +87,11 @@ class SpinCoaterDriver(SpinCoater):
 
     @property
     def device_id(self) -> str:
+        """Return the device id exposed by this component."""
         return "spin_coater"
 
     def initialize(self) -> ActionResult:
+        """Initialize the spin coater driver and return its readiness or failure result."""
         self._activity = "INITIALIZING"
         try:
             self._client.open()
@@ -107,6 +112,7 @@ class SpinCoaterDriver(SpinCoater):
         return ActionResult.done("Native spin coater initialized")
 
     def home(self) -> ActionResult:
+        """Move the device to its configured home position and report completion."""
         if failure := self._ready_failure():
             return failure
         self._activity = "HOMING"
@@ -174,6 +180,7 @@ class SpinCoaterDriver(SpinCoater):
         )
 
     def run(self, recipe: Sequence[SpinStep]) -> ActionResult:
+        """Run the spin coater driver operation sequence."""
         if failure := self._ready_failure():
             return failure
         if not recipe:
@@ -243,6 +250,7 @@ class SpinCoaterDriver(SpinCoater):
         )
 
     def stop(self) -> ActionResult:
+        """Request spin coater driver shutdown and report the implementation result; physical stop support depends on the driver."""
         error: IntegratedControlError | None = None
         if self._initialized:
             try:
@@ -261,6 +269,7 @@ class SpinCoaterDriver(SpinCoater):
         return ActionResult.done("Spin coater servo disabled and connection closed")
 
     def get_state(self) -> DeviceState:
+        """Return the device lifecycle, activity, measurements, and any reported fault."""
         lifecycle = "FAULT" if self._fault else (
             "READY" if self._initialized else "OFFLINE"
         )
@@ -282,15 +291,18 @@ class SpinCoaterDriver(SpinCoater):
         )
 
     def _set_speed_mode(self) -> None:
+        """Select the spin coater speed-control mode."""
         self._client.write_single_register(self.MODE, 1)
         self._client.write_single_register(self.INNER_SPEED_MODE, 0)
 
     def _write_speed(self, rpm: int, acceleration_ms: int, deceleration_ms: int) -> None:
+        """Write the spin coater speed target to its controller registers."""
         self._client.write_single_register(self.ACCELERATION_TIME, acceleration_ms)
         self._client.write_single_register(self.DECELERATION_TIME, deceleration_ms)
         self._client.write_single_register(self.SPEED, rpm)
 
     def _select_position(self, position_id: int) -> None:
+        """Select the position register used for spin coater feedback."""
         bits = [
             (position_id >> shift) & 1
             for shift in (3, 2, 1, 0)
@@ -301,17 +313,20 @@ class SpinCoaterDriver(SpinCoater):
         self._client.write_single_register(self.POSITION_SELECT, 1)
 
     def _positive_position_delta(self, current: int, target: int) -> int:
+        """Calculate forward position travel with the configured wraparound convention."""
         return (
             target - current
         ) % self._config.maximum_single_revolution_position
 
     def _position_is_home(self, position: int) -> bool:
+        """Check whether spin coater position feedback is within the home tolerance."""
         revolution = self._config.maximum_single_revolution_position
         difference = abs(position - self._config.glass_origin_position) % revolution
         circular_error = min(difference, revolution - difference)
         return circular_error <= self._config.home_position_tolerance_counts
 
     def _wait_for_home_position(self) -> int:
+        """Poll spin coater position until home is reached or the timeout expires."""
         poll_interval = self._config.home_poll_interval_s
         initial_delay = min(
             self._config.home_poll_start_delay_s,
@@ -343,6 +358,7 @@ class SpinCoaterDriver(SpinCoater):
     def _restore_after_home(
         self, old_ratio: int | None
     ) -> IntegratedControlError | None:
+        """Restore normal spin configuration after the homing operation."""
         errors: list[IntegratedControlError] = []
         try:
             self._client.write_single_register(self.SERVO_ON, 0)
@@ -364,16 +380,19 @@ class SpinCoaterDriver(SpinCoater):
         return ProtocolError("; ".join(str(error) for error in errors))
 
     def _read_u32_low_word_first(self, address: int) -> int:
+        """Read a 32-bit register value encoded with the low 16-bit word first."""
         low, high = self._client.read_holding_registers(address, 2)
         return high * 65536 + low
 
     def _write_u32_low_word_first(self, address: int, value: int) -> None:
+        """Write a 32-bit value using low-word-first register ordering."""
         self._client.write_multiple_registers(
             address,
             [value & 0xFFFF, (value >> 16) & 0xFFFF],
         )
 
     def _safe_servo_off(self) -> None:
+        """Attempt to disable the servo during failure cleanup without hiding the original error."""
         try:
             self._client.write_single_register(self.SERVO_ON, 0)
         except IntegratedControlError:
@@ -381,6 +400,7 @@ class SpinCoaterDriver(SpinCoater):
         self._rpm = 0
 
     def _ready_failure(self) -> ActionResult | None:
+        """Return a not-ready or fault result when the component cannot accept an operation."""
         if not self._initialized:
             return ActionResult.failed(
                 "DEVICE_NOT_READY", "Spin coater is not initialized"
@@ -388,12 +408,14 @@ class SpinCoaterDriver(SpinCoater):
         return None
 
     def _close_after_failure(self) -> None:
+        """Close available transports after an initialization or communication failure."""
         try:
             self._client.close()
         except IntegratedControlError:
             pass
 
     def _failure(self, code: str, exc: Exception) -> ActionResult:
+        """Record the driver fault and return a failed ActionResult with its error code."""
         self._fault = str(exc) or type(exc).__name__
         self._activity = "FAULT"
         return ActionResult.failed(code, self._fault)

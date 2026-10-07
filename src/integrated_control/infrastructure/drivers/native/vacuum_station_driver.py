@@ -10,15 +10,17 @@ from integrated_control.infrastructure.transports.modbus_rtu import crc16
 
 
 class WriteOnlySerialTransport(Protocol):
-    def open(self) -> None: ...
+    """Define the open, write, and close contract used by the timed vacuum lid driver."""
+    def open(self) -> None: """Open the underlying serial connection."""; ...
 
-    def write(self, request: bytes, *, reset_buffers: bool = True) -> None: ...
+    def write(self, request: bytes, *, reset_buffers: bool = True) -> None: """Write request bytes to the serial connection, optionally resetting buffers first."""; ...
 
-    def close(self) -> None: ...
+    def close(self) -> None: """Close the underlying serial connection."""; ...
 
 
 @dataclass(frozen=True)
 class VacuumStationDriverConfig:
+    """Store configuration values for vacuum station driver."""
     open_position: int = 0
     close_position: int = 250
     initial_speed: int = 10
@@ -41,6 +43,7 @@ class VacuumStationDriver(VacuumStation):
         *,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        """Initialize vacuum station driver dependencies and internal state."""
         self._transport = transport
         self._config = config or VacuumStationDriverConfig()
         self._sleep = sleep
@@ -51,9 +54,11 @@ class VacuumStationDriver(VacuumStation):
 
     @property
     def device_id(self) -> str:
+        """Return the device id exposed by this component."""
         return "vacuum_station"
 
     def initialize(self) -> ActionResult:
+        """Initialize the vacuum station driver and return its readiness or failure result."""
         self._activity = "INITIALIZING"
         try:
             self._transport.open()
@@ -69,6 +74,7 @@ class VacuumStationDriver(VacuumStation):
         )
 
     def open_cover(self) -> ActionResult:
+        """Move the vacuum station lid to its configured open position."""
         return self._move_cover(
             opening=True,
             speed=self._config.open_speed,
@@ -77,6 +83,7 @@ class VacuumStationDriver(VacuumStation):
         )
 
     def close_cover(self) -> ActionResult:
+        """Move the vacuum station lid to its configured closed position."""
         return self._move_cover(
             opening=False,
             speed=self._config.close_speed,
@@ -85,6 +92,7 @@ class VacuumStationDriver(VacuumStation):
         )
 
     def evacuate(self, target_pressure_kpa: float) -> ActionResult:
+        """Request evacuation to the target pressure through the device implementation."""
         if not self._initialized:
             return ActionResult.failed(
                 "DEVICE_NOT_READY", "Vacuum station is not initialized"
@@ -96,6 +104,7 @@ class VacuumStationDriver(VacuumStation):
         )
 
     def vent(self) -> ActionResult:
+        """Request venting of the vacuum station through the device implementation."""
         if not self._initialized:
             return ActionResult.failed(
                 "DEVICE_NOT_READY", "Vacuum station is not initialized"
@@ -106,6 +115,7 @@ class VacuumStationDriver(VacuumStation):
         )
 
     def stop(self) -> ActionResult:
+        """Request vacuum station driver shutdown and report the implementation result; physical stop support depends on the driver."""
         error: IntegratedControlError | None = None
         if self._initialized:
             try:
@@ -123,6 +133,7 @@ class VacuumStationDriver(VacuumStation):
         return ActionResult.done("Vacuum-station lid stopped and connection closed")
 
     def get_state(self) -> DeviceState:
+        """Return the device lifecycle, activity, measurements, and any reported fault."""
         lifecycle = "FAULT" if self._fault else (
             "READY" if self._initialized else "OFFLINE"
         )
@@ -146,6 +157,7 @@ class VacuumStationDriver(VacuumStation):
         position: int,
         motion_time_s: float,
     ) -> ActionResult:
+        """Send the lid movement command and estimate completion using its configured duration."""
         if not self._initialized:
             return ActionResult.failed(
                 "DEVICE_NOT_READY", "Vacuum station is not initialized"
@@ -170,6 +182,7 @@ class VacuumStationDriver(VacuumStation):
 
     def _set_motion_arguments(self, speed: int) -> None:
         # Preserve the exact write order and register choices in old_code.
+        """Write lid speed, acceleration, and deceleration parameters."""
         self._write_register(0x001E, 2000)
         self._write_register(0x001F, 1000)
         self._write_register(0x0030, self._config.initial_speed)
@@ -178,14 +191,17 @@ class VacuumStationDriver(VacuumStation):
         self._write_register(0x0030, self._config.deceleration_time)
 
     def _write_signed_position(self, position: int) -> None:
+        """Encode and write the signed lid position target."""
         encoded = position & 0xFFFFFFFF
         self._write_register(0x0034, encoded & 0xFFFF)
         self._write_register(0x0035, (encoded >> 16) & 0xFFFF)
 
     def _expected_stop(self) -> None:
+        """Send the documented stop command to the vacuum lid controller."""
         self._write_register(0x0038, 2)
 
     def _write_register(self, address: int, value: int) -> None:
+        """Encode and send one controller register write."""
         payload = bytes(
             [1, 0x06]
             + list(address.to_bytes(2, "big"))
@@ -195,12 +211,14 @@ class VacuumStationDriver(VacuumStation):
         self._sleep(self._config.command_delay_s)
 
     def _close_after_failure(self) -> None:
+        """Close available transports after an initialization or communication failure."""
         try:
             self._transport.close()
         except IntegratedControlError:
             pass
 
     def _failure(self, code: str, exc: Exception) -> ActionResult:
+        """Record the driver fault and return a failed ActionResult with its error code."""
         self._fault = str(exc) or type(exc).__name__
         self._activity = "FAULT"
         return ActionResult.failed(code, self._fault)

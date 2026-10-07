@@ -13,6 +13,7 @@ from integrated_control.infrastructure.transports.ascii_motion import (
 
 @dataclass(frozen=True)
 class PipetteDriverConfig:
+    """Store configuration values for pipette driver."""
     minimum_z: float = 0.0
     maximum_z: float = 100.0
     z_pulses_per_100: int = 150000
@@ -38,6 +39,7 @@ class PipetteDriver(Pipette):
         transport: AsciiSerialTransport,
         config: PipetteDriverConfig | None = None,
     ) -> None:
+        """Initialize pipette driver dependencies and internal state."""
         self._transport = transport
         self._config = config or PipetteDriverConfig()
         self._initialized = False
@@ -49,9 +51,11 @@ class PipetteDriver(Pipette):
 
     @property
     def device_id(self) -> str:
+        """Return the device id exposed by this component."""
         return "pipette"
 
     def initialize(self) -> ActionResult:
+        """Initialize the pipette driver and return its readiness or failure result."""
         self._activity = "INITIALIZING"
         try:
             self._transport.open()
@@ -71,6 +75,7 @@ class PipetteDriver(Pipette):
         return ActionResult.done("Native pipette initialized")
 
     def move_z(self, height: float) -> ActionResult:
+        """Move the vertical axis to the requested position and report the operation result."""
         if failure := self._ready_failure():
             return failure
         if not self._config.minimum_z <= height <= self._config.maximum_z:
@@ -91,6 +96,7 @@ class PipetteDriver(Pipette):
         return ActionResult.done("Pipette Z movement completed", {"z": height})
 
     def attach_tip(self, tip_id: str) -> ActionResult:
+        """Record attachment of the selected pipette tip after checking device readiness."""
         if failure := self._ready_failure():
             return failure
         if not tip_id.strip():
@@ -103,6 +109,7 @@ class PipetteDriver(Pipette):
         )
 
     def eject_tip(self) -> ActionResult:
+        """Eject or clear the attached pipette tip and update its tracked state."""
         if failure := self._ready_failure():
             return failure
         self._activity = "EJECTING_TIP"
@@ -123,6 +130,7 @@ class PipetteDriver(Pipette):
         *,
         require_liquid_detection: bool = True,
     ) -> ActionResult:
+        """Aspirate the requested volume using the supplied pipetting settings."""
         if failure := self._ready_failure():
             return failure
         if self._tip_id is None:
@@ -167,6 +175,7 @@ class PipetteDriver(Pipette):
         )
 
     def dispense(self, volume_ul: float | None = None) -> ActionResult:
+        """Dispense the requested volume using the supplied pipetting settings."""
         if failure := self._ready_failure():
             return failure
         if self._tip_id is None:
@@ -191,6 +200,7 @@ class PipetteDriver(Pipette):
         )
 
     def stop(self) -> ActionResult:
+        """Request pipette driver shutdown and report the implementation result; physical stop support depends on the driver."""
         try:
             self._transport.close()
         except IntegratedControlError as exc:
@@ -203,6 +213,7 @@ class PipetteDriver(Pipette):
         )
 
     def get_state(self) -> DeviceState:
+        """Return the device lifecycle, activity, measurements, and any reported fault."""
         lifecycle = "FAULT" if self._fault else (
             "READY" if self._initialized else "OFFLINE"
         )
@@ -221,6 +232,7 @@ class PipetteDriver(Pipette):
         )
 
     def _wait_z(self) -> None:
+        """Poll vertical-axis feedback until the requested position is reached or a timeout occurs."""
         wait_for_ascii_status(
             self._transport,
             self.Z_QUERY,
@@ -230,6 +242,7 @@ class PipetteDriver(Pipette):
         )
 
     def _wait_adp(self) -> None:
+        """Poll pipette operation feedback until completion or timeout."""
         wait_for_ascii_status(
             self._transport,
             self.ADP_QUERY,
@@ -240,17 +253,20 @@ class PipetteDriver(Pipette):
         )
 
     def _ready_failure(self) -> ActionResult | None:
+        """Return a not-ready or fault result when the component cannot accept an operation."""
         if not self._initialized:
             return ActionResult.failed("DEVICE_NOT_READY", "Pipette is not initialized")
         return None
 
     def _close_after_failure(self) -> None:
+        """Close available transports after an initialization or communication failure."""
         try:
             self._transport.close()
         except IntegratedControlError:
             pass
 
     def _failure(self, code: str, exc: Exception) -> ActionResult:
+        """Record the driver fault and return a failed ActionResult with its error code."""
         self._fault = str(exc) or type(exc).__name__
         self._activity = "FAULT"
         return ActionResult.failed(code, self._fault)

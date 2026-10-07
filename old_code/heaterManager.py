@@ -1,13 +1,17 @@
 class heaterController:
+    """Represent heater controller and its associated operations."""
     def __init__(self, name, num = 4):
+        """Initialize heater controller dependencies and internal state."""
         self.name = name
         self.num = num
         self.list = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 
     def Set(self, InitialList):
+        """Set."""
         self.list = InitialList
 
     def QueryGlassPosition(self, id):
+        """Query glass position."""
         for i in range(self.num):
             curPosition = i + 1;
             if(self.list[curPosition] == id):
@@ -16,6 +20,7 @@ class heaterController:
         return 0
 
     def RemoveGlass(self, id):
+        """Remove glass."""
         aimPosition = self.QueryGlassPosition(id)
         if aimPosition == 0:
             print("Error ! Heater" + str(id) + "not found !")
@@ -25,6 +30,7 @@ class heaterController:
         return aimPosition
 
     def QueryFreePosition(self, id):
+        """Query free position."""
         for i in range(self.num):
             curPosition = i + 1;
             if(self.list[curPosition] == 0):
@@ -33,6 +39,7 @@ class heaterController:
         return 0
 
     def AssignGlass(self, id):
+        """Assign glass."""
         aimPosition = self.QueryFreePosition(id)
         if aimPosition == 0:
             print("Error ! No free position !")

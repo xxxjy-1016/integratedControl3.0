@@ -1,0 +1,11 @@
+{
+  "step1_bound_s": 32,
+  "step2_bound_s": 3,
+  "heat_min_s": 2,
+  "heat_max_s": 10,
+  "put_offset_min_s": 26,
+  "put_offset_max_s": 30,
+  "pickup_offset_min_s": 0,
+  "pickup_offset_max_s": 1,
+  "pickup_margin_s": 1
+}

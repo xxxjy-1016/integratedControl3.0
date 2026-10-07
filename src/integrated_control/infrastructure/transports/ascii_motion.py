@@ -13,9 +13,9 @@ from integrated_control.infrastructure.transports.modbus_rtu import crc16
 class AsciiSerialTransport(Protocol):
     """Byte-transport capabilities required by the ASCII device protocol."""
 
-    def open(self) -> None: ...
+    def open(self) -> None: """Open the underlying serial connection."""; ...
 
-    def write(self, request: bytes, *, reset_buffers: bool = True) -> None: ...
+    def write(self, request: bytes, *, reset_buffers: bool = True) -> None: """Write request bytes to the serial connection, optionally resetting buffers first."""; ...
 
     def transact(
         self,
@@ -23,9 +23,9 @@ class AsciiSerialTransport(Protocol):
         *,
         response_size: int = 256,
         reset_buffers: bool = True,
-    ) -> bytes: ...
+    ) -> bytes: """Send request bytes and read the serial response under the transport lock."""; ...
 
-    def close(self) -> None: ...
+    def close(self) -> None: """Close the underlying serial connection."""; ...
 
 
 def append_ascii_crc(payload: bytes) -> bytes:
@@ -34,6 +34,7 @@ def append_ascii_crc(payload: bytes) -> bytes:
 
 
 def signed_hex_command(prefix: bytes, value: int, *, width: int) -> bytes:
+    """Encode a signed motion value using the controller hexadecimal command format."""
     try:
         encoded = value.to_bytes(width, "big", signed=value < 0)
     except OverflowError as exc:
@@ -53,6 +54,7 @@ def wait_for_ascii_status(
     poll_interval_s: float,
     response_size: int = 40,
 ) -> bytes:
+    """Wait for ascii status."""
     deadline = time.monotonic() + timeout_s
     last_response = b""
     while time.monotonic() < deadline:

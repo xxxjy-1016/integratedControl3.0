@@ -18,7 +18,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class NativeBootstrapTests(unittest.TestCase):
+    """Group checks for native bootstrap tests."""
     def test_coordinates_match_old_code_calibration(self) -> None:
+        """Check coordinates match old code calibration."""
         coordinates = json.loads(
             (PROJECT_ROOT / "config" / "coordinates.yaml").read_text(
                 encoding="utf-8"
@@ -80,6 +82,7 @@ class NativeBootstrapTests(unittest.TestCase):
     def test_builds_every_existing_native_device_from_legacy_aligned_settings(
         self,
     ) -> None:
+        """Check builds every existing native device from legacy aligned settings."""
         config = json.loads(
             (PROJECT_ROOT / "config" / "devices.yaml").read_text(encoding="utf-8")
         )
@@ -163,7 +166,7 @@ class NativeBootstrapTests(unittest.TestCase):
         self.assertEqual(1.5, spin_coater._config.home_poll_start_delay_s)
         self.assertEqual(0.25, spin_coater._config.home_poll_interval_s)
         self.assertEqual(10000, spin_coater._config.home_position_tolerance_counts)
-        self.assertEqual(0.8, spin_coater._client.continuous_failure_timeout_s)
+        self.assertEqual(3.0, spin_coater._client.continuous_failure_timeout_s)
         self.assertEqual(0.1, spin_coater._client.retry_interval_s)
 
         self.assertEqual("COM15", vacuum_station._transport.settings.port)

@@ -9,12 +9,14 @@ from typing import cast
 
 
 class SystemController:
+    """Manage application startup, optional homing, readiness checks, and shutdown."""
     def __init__(
         self,
         devices: DeviceManager,
         homing: HomingService,
         state_store: StateStore | None = None,
     ) -> None:
+        """Initialize system controller dependencies and internal state."""
         self.devices = devices
         self._homing = homing
         self._state = state_store or StateStore()
@@ -23,9 +25,11 @@ class SystemController:
 
     @property
     def snapshot(self) -> SystemSnapshot:
+        """Return the current system controller state snapshot."""
         return self._state.get()
 
     def start(self) -> ActionResult:
+        """Initialize devices, home the stage when needed, verify readiness, and publish READY or FAULT."""
         self._state.set(SystemState.INITIALIZING, "Initializing devices")
         initialized = self.devices.initialize_all()
         if not initialized.success:
@@ -58,6 +62,7 @@ class SystemController:
         )
 
     def shutdown(self) -> ActionResult:
+        """Shut down managed devices and publish the resulting system state."""
         result = self.devices.stop_all()
         if result.success:
             self._state.set(SystemState.STOPPED, "System stopped")
@@ -66,5 +71,6 @@ class SystemController:
         return result
 
     def _fault(self, result: ActionResult) -> ActionResult:
+        """Record the failed operation as the current system fault and return its result."""
         self._state.set(SystemState.FAULT, result.message, result.error_code)
         return result

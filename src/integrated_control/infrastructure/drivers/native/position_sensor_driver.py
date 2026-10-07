@@ -12,6 +12,7 @@ class PositionSensorDriver(PositionSensor):
     RANGE_500_MV = 0x000B
 
     def __init__(self, client: ModbusRtuClient) -> None:
+        """Initialize position sensor driver dependencies and internal state."""
         self._client = client
         self._initialized = False
         self._fault: str | None = None
@@ -19,9 +20,11 @@ class PositionSensorDriver(PositionSensor):
 
     @property
     def device_id(self) -> str:
+        """Return the device id exposed by this component."""
         return "position_sensor"
 
     def initialize(self) -> ActionResult:
+        """Initialize the position sensor driver and return its readiness or failure result."""
         try:
             self._client.open()
             self._set_range(0)
@@ -38,9 +41,11 @@ class PositionSensorDriver(PositionSensor):
         return ActionResult.done("Native position sensor initialized")
 
     def is_triggered(self, axis: Axis) -> bool:
+        """Return whether the selected position sensor reports an active trigger."""
         return self.read_voltage(axis) > 0.0
 
     def read_voltage(self, axis: Axis) -> float:
+        """Read the voltage reported by the selected position sensor channel."""
         if not self._initialized:
             raise RuntimeError("Position sensor is not initialized")
         channel = 0 if axis == "x" else 1
@@ -55,6 +60,7 @@ class PositionSensorDriver(PositionSensor):
         return voltage_mv
 
     def stop(self) -> ActionResult:
+        """Request position sensor driver shutdown and report the implementation result; physical stop support depends on the driver."""
         try:
             self._client.close()
         except IntegratedControlError as exc:
@@ -64,6 +70,7 @@ class PositionSensorDriver(PositionSensor):
         return ActionResult.done("Native position sensor connection closed")
 
     def get_state(self) -> DeviceState:
+        """Return the device lifecycle, activity, measurements, and any reported fault."""
         lifecycle = "FAULT" if self._fault else (
             "READY" if self._initialized else "OFFLINE"
         )
@@ -80,4 +87,5 @@ class PositionSensorDriver(PositionSensor):
         )
 
     def _set_range(self, channel: int) -> None:
+        """Configure the position sensor measurement range."""
         self._client.write_single_register(200 + channel, self.RANGE_500_MV)

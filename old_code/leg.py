@@ -5,14 +5,14 @@ from errors import TLE
 from tools import Calculator
 from errors import ModbusError
 
-setPosition_x = [0x02, 0x06, 0x21, 0x09, 0x00, 0x01, 0x92, 0x07] # set mode to 位置模式
+setPosition_x = [0x02, 0x06, 0x21, 0x09, 0x00, 0x01, 0x92, 0x07] # Set position mode.
 setAbsolute_x = [0x02, 0x06, 0x23, 0x11, 0x00, 0x01, 0x13, 0xB8]
 setRelative_x = [0x02, 0x06, 0x23, 0x11, 0x00, 0x00, 0xD2, 0x78]
-setSomething_x = [0x02, 0x06, 0x23, 0x10, 0x00, 0x03, 0xC3, 0xB9] #设定为通讯设定段号运行
-setPosition_y = [0x01, 0x06, 0x21, 0x09, 0x00, 0x01, 0x92, 0x34] # set mode to 位置模式
+setSomething_x = [0x02, 0x06, 0x23, 0x10, 0x00, 0x03, 0xC3, 0xB9] # Use the segment number supplied through communication.
+setPosition_y = [0x01, 0x06, 0x21, 0x09, 0x00, 0x01, 0x92, 0x34] # Set position mode.
 setAbsolute_y = [0x01, 0x06, 0x23, 0x11, 0x00, 0x01, 0x13, 0x8B]
 setRelative_y = [0x01, 0x06, 0x23, 0x11, 0x00, 0x00, 0xD2, 0x4B]
-setSomething_y = [0x01, 0x06, 0x23, 0x10, 0x00, 0x03, 0xC3, 0x8A] #设定为通讯设定段号运行
+setSomething_y = [0x01, 0x06, 0x23, 0x10, 0x00, 0x03, 0xC3, 0x8A] # Use the segment number supplied through communication.
 query_x = [0x02, 0x03, 0x23, 0x03, 0x00, 0x01, 0x7F, 0xBD]
 moveToCommand_x = [0x02, 0x10, 0x23, 0x20, 0x00, 0x02, 0x04]
 query_y = [0x01, 0x03, 0x23, 0x03, 0x00, 0x01, 0x7F, 0x8E]
@@ -24,7 +24,9 @@ flushTwo_y = [0x01, 0x06, 0x23, 0x16, 0x00, 0x01, 0xA2, 0x4A]
 
 class controller:
 
+    """Represent controller and its associated operations."""
     def __init__(self, serName, bps = 115200, timeout = 10, sendingTime = 0.15):
+        """Initialize controller dependencies and internal state."""
         self.serName = serName
         self.bps = bps
         self.timeout = timeout
@@ -34,9 +36,11 @@ class controller:
         self.max_y = 20000
 
     def write(self, command):
+        """Write."""
         self.ser.write(bytes(command))
 
     def init_x(self):
+        """Init x."""
         self.ser.write(bytes(setPosition_x))
         time.sleep(0.01)
         self.ser.write(bytes(setAbsolute_x))
@@ -45,6 +49,7 @@ class controller:
         time.sleep(0.01)
 
     def init_y(self):
+        """Init y."""
         self.ser.write(bytes(setPosition_y))
         time.sleep(0.01)
         self.ser.write(bytes(setAbsolute_y))
@@ -53,10 +58,12 @@ class controller:
         time.sleep(0.01)
 
     def init(self):
+        """Init."""
         self.init_x()
         self.init_y()
 
     def set_x(self, speed = 500, acceleration = 100, deceleration = 100):
+        """Set x."""
         command = [0x02, 0x06, 0x23, 0x21]
         command += Calculator.intToList(speed)
         command += Calculator.crc(bytes(command), flag = 'list')
@@ -74,6 +81,7 @@ class controller:
         time.sleep(0.01)
 
     def set_y(self, speed = 500, acceleration = 100, deceleration = 100):
+        """Set y."""
         command = [0x01, 0x06, 0x23, 0x21]
         command += Calculator.intToList(speed)
         command += Calculator.crc(bytes(command), flag = 'list')
@@ -91,22 +99,26 @@ class controller:
         time.sleep(0.01)
 
     def set(self, speed_x = 500, acceleration_x = 100, deceleration_x = 100, speed_y = 500, acceleration_y = 100, deceleration_y = 100):
+        """Set."""
         self.set_x(speed = speed_x, acceleration = acceleration_x, deceleration = deceleration_x)
         self.set_y(speed = speed_y, acceleration = acceleration_y, deceleration = deceleration_y)
 
     def flush_x(self):
+        """Flush x."""
         self.ser.write(bytes(flushOne_x))
         time.sleep(0.01)
         self.ser.write(bytes(flushTwo_x))
         time.sleep(0.01)
 
     def flush_y(self):
+        """Flush y."""
         self.ser.write(bytes(flushOne_y))
         time.sleep(0.01)
         self.ser.write(bytes(flushTwo_y))
         time.sleep(0.01)
 
     def wait_x(self):
+        """Wait x."""
         self.ser.reset_input_buffer()
         self.ser.reset_output_buffer()
         self.ser.write(query_x)
@@ -121,7 +133,7 @@ class controller:
             self.ser.reset_input_buffer()
             self.ser.reset_output_buffer()
 
-            if feedback.strip() == bytes([0x02, 0x03, 0x02, 0x00, 0x42, 0x7C, 0x75]): #到位
+            if feedback.strip() == bytes([0x02, 0x03, 0x02, 0x00, 0x42, 0x7C, 0x75]): # The target position has been reached.
                 #print("X done, exiting")
                 return
 
@@ -134,13 +146,14 @@ class controller:
             time.sleep(0.01)
 
     def wait_y(self):
+        """Wait y."""
         stTime = time.time()
         while True:
             self.ser.write(query_y)
             time.sleep(0.05)
             feedback = self.ser.read(40)
 
-            # 打印实际收到的数据（十六进制）
+            # Print the received bytes in hexadecimal.
             hex_feedback = ' '.join(f'{x:02X}' for x in feedback)
             print(f"Y轴查询反馈: {hex_feedback}")
 
@@ -152,10 +165,12 @@ class controller:
             time.sleep(0.05)
 
     def wait(self):
+        """Wait."""
         self.wait_x()
         self.wait_y()
 
     def moveTo_x(self, input_val):
+        """Move to x."""
         if input_val > 100 :
             print("wrong x input!")
             return
@@ -169,6 +184,7 @@ class controller:
         time.sleep(0.01)
 
     def moveTo_y(self, input_val):
+        """Move to y."""
         if input_val > 100 :
             print("wrong y input!")
             return
@@ -182,6 +198,7 @@ class controller:
         time.sleep(0.01)
 
     def moveTo(self, x, y):
+        """Move to."""
         self.ser.reset_input_buffer()
         self.set()
         self.moveTo_x(x)
@@ -190,15 +207,18 @@ class controller:
         self.wait_y()
 
     def moveToDirectly(self, x, y):
+        """Move to directly."""
         self.set()
         self.moveTo_x(x)
         self.moveTo_y(y)
         self.wait()
 
     def close(self):
+        """Close."""
         self.ser.close()
 
     def communicateByList(self, command):
+        """Communicate by list."""
         self.ser.reset_input_buffer()
         self.ser.reset_output_buffer()
         self.ser.write(bytes(command))
@@ -208,6 +228,7 @@ class controller:
         return feedbackList
 
     def queryByBytes(self, queryAddress, queryLength = 2, queryDevice = 1, returnType = "register"):
+        """Query by bytes."""
         command = [queryDevice, 0x03] + Calculator.intToList(queryAddress) + Calculator.intToList(queryLength)
         command += Calculator.crc(bytes(command), flag = 'list')
         feedbackList = self.communicateByList(command)
@@ -229,12 +250,14 @@ class controller:
         return ans
 
     def getCurrentPos_x(self):
+        """Get current pos x."""
         pos = self.queryByBytes(0x6064,2,2,'bytes')
         pos_100_x = int.from_bytes(pos, byteorder='big', signed=True)
         pos_100_x = pos_100_x / self.max_x * 100
         return pos_100_x
 
     def getCurrentPos_y(self):
+        """Get current pos y."""
         pos = self.queryByBytes(0x6064, 2, 1, 'bytes')
         pos_100_y = int.from_bytes(pos, byteorder='big', signed=True)
         pos_100_y = pos_100_y / self.max_y * 100
@@ -248,7 +271,7 @@ if __name__ == "__main__":
         leg = controller("COM8")
         leg.init()
         print(f"当前Y轴位置: {leg.getCurrentPos_y()}%")
-        leg.moveTo(50, 50)  # 先移动到中间位置
+        leg.moveTo(50, 50)  # Move to the middle position first.
         print(f"移动后Y轴位置: {leg.getCurrentPos_y()}%")
         leg.moveTo(0,0)
         for i in range(100):

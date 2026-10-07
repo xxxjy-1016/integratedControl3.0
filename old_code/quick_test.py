@@ -1,4 +1,4 @@
-"""快速测试脚本 - 检测设备连接状态"""
+"""Legacy quick test implementation retained for migration reference."""
 import serial
 import time
 
@@ -10,11 +10,11 @@ devices = {
 }
 
 def test_device(com, name):
-    """测试单个设备连接"""
+    """Test a connection to one device."""
     try:
         ser = serial.Serial(com, 115200, timeout=1)
-        # 发送查询命令
-        test_cmd = b'\x01\x03\x02\x02\x00\x01\x24\x72'  # hand查询命令
+        # Send the query command.
+        test_cmd = b'\x01\x03\x02\x02\x00\x01\x24\x72'  # Gripper query command.
         ser.write(test_cmd)
         time.sleep(0.2)
         response = ser.read(50)

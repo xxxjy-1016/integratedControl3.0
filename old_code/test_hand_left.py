@@ -1,4 +1,4 @@
-# 机械臂往左移动1cm
+# Move the arm 1 cm to the left.
 import sys
 sys.path.insert(0, 'D:/anaconda/python_files/python_test/integratedControl2.0')
 import hand
@@ -11,11 +11,11 @@ try:
 except Exception as e:
     print('初始化部分失败:', e)
 
-# 尝试直接移动关节看看
+# Attempt a direct joint movement.
 print('尝试移动...')
 try:
-    # 机械臂关节移动测试
-    h.moveTo(20)  # 移动到位置20
+    # Test arm joint movement.
+    h.moveTo(20)  # Move to position 20.
     print('移动命令已发送')
 except Exception as e:
     print('移动失败:', e)

@@ -16,6 +16,7 @@ from integrated_control.infrastructure.persistence.stage_state_store import (
 
 @dataclass(frozen=True)
 class StageDriverConfig:
+    """Store configuration values for stage driver."""
     minimum_x: float = -140.0
     maximum_x: float = 140.0
     minimum_y: float = -100.0
@@ -34,6 +35,7 @@ class StageDriverConfig:
 
 
 def _registers_for_signed_32(value: int) -> list[int]:
+    """Encode a signed 32-bit value as the controller register pair."""
     encoded = (value & 0xFFFFFFFF).to_bytes(4, "big")
     return [int.from_bytes(encoded[:2], "big"), int.from_bytes(encoded[2:], "big")]
 
@@ -64,6 +66,7 @@ class StageDriver(Stage):
         config: StageDriverConfig | None = None,
         state_store: StageStateStore | None = None,
     ) -> None:
+        """Initialize stage driver dependencies and internal state."""
         self._client = client
         self._config = config or StageDriverConfig()
         self._state_store = state_store
@@ -76,9 +79,11 @@ class StageDriver(Stage):
 
     @property
     def device_id(self) -> str:
+        """Return the device id exposed by this component."""
         return "stage"
 
     def initialize(self) -> ActionResult:
+        """Initialize the stage driver and return its readiness or failure result."""
         self._activity = "INITIALIZING"
         try:
             self._load_persistent_state()
@@ -104,6 +109,7 @@ class StageDriver(Stage):
         *,
         ignore_limit: bool = False,
     ) -> ActionResult:
+        """Move one stage axis to the requested coordinate using its configured offset."""
         if not self._initialized:
             return ActionResult.failed("DEVICE_NOT_READY", "Stage is not initialized")
         actual_target = target + self._offsets[axis]
@@ -121,6 +127,7 @@ class StageDriver(Stage):
         *,
         ignore_limit: bool = False,
     ) -> ActionResult:
+        """Move one stage axis to a raw coordinate without applying its configured offset."""
         return self._move_to_raw(
             axis,
             target,
@@ -136,6 +143,7 @@ class StageDriver(Stage):
         logical_target: float | None,
         ignore_limit: bool,
     ) -> ActionResult:
+        """Command raw stage movement, enforce physical limits, and wait for arrival."""
         if not self._initialized:
             return ActionResult.failed("DEVICE_NOT_READY", "Stage is not initialized")
         minimum, maximum = self._limits(axis)
@@ -190,6 +198,7 @@ class StageDriver(Stage):
         )
 
     def get_raw_position(self, axis: Axis) -> float:
+        """Return the selected stage axis position before applying its coordinate offset."""
         slave = self.X_SLAVE if axis == "x" else self.Y_SLAVE
         pulses_per_travel = (
             self._config.pulses_x if axis == "x" else self._config.pulses_y
@@ -200,15 +209,19 @@ class StageDriver(Stage):
         return position
 
     def get_offset(self, axis: Axis) -> float:
+        """Return the coordinate offset currently assigned to the selected stage axis."""
         return self._offsets[axis]
 
     def set_offset(self, axis: Axis, value: float) -> None:
+        """Update the coordinate offset assigned to the selected stage axis."""
         self._offsets[axis] = float(value)
 
     def needs_startup_homing(self) -> bool:
+        """Return whether startup homing is required."""
         return not self._at_origin
 
     def reload_saved_offsets(self) -> ActionResult:
+        """Restore stage offsets from the persisted calibration state."""
         try:
             self._load_persistent_state(preserve_origin=True)
         except IntegratedControlError as exc:
@@ -219,6 +232,7 @@ class StageDriver(Stage):
         )
 
     def save_offsets(self) -> ActionResult:
+        """Persist the current axis offsets and stage-origin metadata."""
         if self._state_store is None:
             return super().save_offsets()
         try:
@@ -233,6 +247,7 @@ class StageDriver(Stage):
         )
 
     def mark_at_origin(self, value: bool) -> ActionResult:
+        """Update the saved stage-origin flag for startup homing decisions."""
         try:
             self._set_persisted_origin(value)
         except IntegratedControlError as exc:
@@ -242,6 +257,7 @@ class StageDriver(Stage):
         )
 
     def set_current_position_as_zero(self, axis: Axis) -> ActionResult:
+        """Establish the selected axis current physical position as its hardware zero."""
         if not self._initialized:
             return ActionResult.failed("DEVICE_NOT_READY", "Stage is not initialized")
         self._activity = "HARDWARE_ZEROING"
@@ -270,6 +286,7 @@ class StageDriver(Stage):
         )
 
     def stop(self) -> ActionResult:
+        """Request stage driver shutdown and report the implementation result; physical stop support depends on the driver."""
         try:
             self._client.close()
         except IntegratedControlError as exc:
@@ -281,6 +298,7 @@ class StageDriver(Stage):
         )
 
     def get_state(self) -> DeviceState:
+        """Return the device lifecycle, activity, measurements, and any reported fault."""
         lifecycle = "FAULT" if self._fault else (
             "READY" if self._initialized else "OFFLINE"
         )
@@ -301,16 +319,19 @@ class StageDriver(Stage):
         )
 
     def _initialize_x(self) -> None:
+        """Configure and enable the native X-axis controller."""
         self._client.write_single_register(0x2109, 1, slave_id=self.X_SLAVE)
         self._client.write_single_register(0x2311, 1, slave_id=self.X_SLAVE)
         self._client.write_single_register(0x2310, 3, slave_id=self.X_SLAVE)
 
     def _initialize_y(self) -> None:
+        """Configure and enable the native Y-axis controller."""
         for value in (0x0006, 0x0007, 0x000F):
             self._client.write_single_register(0x6040, value, slave_id=self.Y_SLAVE)
         self._client.write_single_register(0x6060, 1, slave_id=self.Y_SLAVE)
 
     def _configure_motion(self) -> None:
+        """Write axis motion parameters from the configured speed and ramp settings."""
         self._client.write_single_register(
             0x2321, self._config.speed_x, slave_id=self.X_SLAVE
         )
@@ -333,6 +354,7 @@ class StageDriver(Stage):
         )
 
     def _wait_until_arrived(self, axis: Axis) -> None:
+        """Poll axis feedback until motion completes or the configured timeout expires."""
         deadline = time.monotonic() + self._config.movement_timeout_s
         while time.monotonic() < deadline:
             if axis == "x":
@@ -350,6 +372,7 @@ class StageDriver(Stage):
         raise CommunicationTimeoutError(f"{axis.upper()} stage movement timed out")
 
     def _clear_x_position(self) -> tuple[int, dict[str, int]]:
+        """Clear the X position using its hardware position-reset register."""
         status = self._client.read_holding_registers(
             self.X_STATUS, 1, slave_id=self.X_SLAVE
         )[0]
@@ -364,6 +387,7 @@ class StageDriver(Stage):
         return pulses, {"statusword": status}
 
     def _clear_y_position(self) -> tuple[int, dict[str, int]]:
+        """Clear the Y position using its controller homing-mode sequence."""
         self._client.write_single_register(
             self.MODE_OF_OPERATION, self.HOMING_MODE, slave_id=self.Y_SLAVE
         )
@@ -422,18 +446,21 @@ class StageDriver(Stage):
         return pulses, {"mode_display": mode_display, "statusword": status}
 
     def _read_position_pulses(self, slave: int) -> int:
+        """Read the selected axis raw position as signed controller pulses."""
         raw = self._client.read_data_bytes(
             self.POSITION_ACTUAL, 2, slave_id=slave
         )
         return int.from_bytes(raw, "big", signed=True)
 
     def _pulses_to_position(self, axis: Axis, pulses: int) -> float:
+        """Convert signed controller pulses to the configured axis coordinate units."""
         pulses_per_travel = (
             self._config.pulses_x if axis == "x" else self._config.pulses_y
         )
         return pulses / pulses_per_travel * 100.0
 
     def _load_persistent_state(self, *, preserve_origin: bool = False) -> None:
+        """Load saved stage offsets and origin metadata into the driver."""
         if self._state_store is None:
             return
         state = self._state_store.load()
@@ -443,6 +470,7 @@ class StageDriver(Stage):
             self._at_origin = state.stage_at_origin
 
     def _set_persisted_origin(self, value: bool) -> None:
+        """Update and save the stage-origin flag without changing axis offsets."""
         if self._state_store is not None:
             self._state_store.save_origin(value)
         self._at_origin = bool(value)
@@ -450,6 +478,7 @@ class StageDriver(Stage):
     def _update_origin_from_actual_positions(self) -> None:
         # Refresh both axes so the persisted flag always describes current
         # hardware feedback rather than an earlier cached position.
+        """Reconcile the origin flag with the current physical axis positions."""
         self.get_raw_position("x")
         self.get_raw_position("y")
         tolerance = {
@@ -472,11 +501,13 @@ class StageDriver(Stage):
         self._set_persisted_origin(at_origin)
 
     def _limits(self, axis: Axis) -> tuple[float, float]:
+        """Return the configured lower and upper travel limits for the selected axis."""
         if axis == "x":
             return self._config.minimum_x, self._config.maximum_x
         return self._config.minimum_y, self._config.maximum_y
 
     def _failure(self, code: str, exc: Exception) -> ActionResult:
+        """Record the driver fault and return a failed ActionResult with its error code."""
         self._fault = str(exc) or type(exc).__name__
         self._activity = "FAULT"
         return ActionResult.failed(code, self._fault)

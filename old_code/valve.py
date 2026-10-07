@@ -9,7 +9,9 @@ import threading
 from dataStructures import *
 
 class controller:
+    """Represent controller and its associated operations."""
     def __init__(self, serName, bps=38400, timeout=10):
+        """Initialize controller dependencies and internal state."""
         self.serName = serName
         self.bps = bps
         self.timeout = timeout
@@ -17,16 +19,19 @@ class controller:
         self.sendingTime = 0.1
 
     def setPowerOn(self):
+        """Set power on."""
         command = [0x01, 0x06, 0x00, 0x00, 0x00, 0x01]
         command += Calculator.crc(bytes(command), 'list')
         self.writeList(command)
 
     def setPowerOff(self):
+        """Set power off."""
         command = [0x01, 0x06, 0x00, 0x00, 0x00, 0x00]
         command += Calculator.crc(bytes(command), 'list')
         self.writeList(command)
 
     def writeList(self, command):
+        """Write list."""
         self.ser.write(bytes(command))
         #print("send    : ", Calculator.listToString(command))
         self.ser.reset_input_buffer()
@@ -36,6 +41,7 @@ class controller:
         #print("receive : ", Calculator.listToString(list(feedback)))
 
     def close(self):
+        """Close."""
         self.ser.close()
 
 

@@ -14,12 +14,14 @@ import time
 import heaterManager
 import positionSensor
 
-# Z轴安全高度（避免撞限位）
-Z_SAFE_HAND = 1.0    # 手爪安全最低位置（禁止小于1）
-Z_SAFE_MOUTH = 0.0   # 移液器安全最低位置
+# Safe Z height to avoid the travel limit.
+Z_SAFE_HAND = 1.0    # Minimum safe gripper position; values below 1 are forbidden.
+Z_SAFE_MOUTH = 0.0   # Minimum safe pipette position.
 
 class masterController:
+    """Represent master controller and its associated operations."""
     def __init__(self):
+        """Initialize master controller dependencies and internal state."""
         self.hand = hand.controller("COM7")
         self.mouth = mouth.controller("COM9")
         self.spinCoater = spinCoater2.controller("COM14")
@@ -36,7 +38,7 @@ class masterController:
         self.coordinate_spinCoater_wait_hand = None
         self.coordinate_spinCoater_wait_mouth = None
         self.coordinate_origin = None
-        self.glass_coordinates = [None] * 24  # 索引 0~23 对应编号 1~24
+        self.glass_coordinates = [None] * 24  # Indices 0..23 correspond to glass numbers 1..24.
         self.distance_platform_pick_and_put = None
         self.coordinate_cur = None
         # self.coordinate_lips_first = None
@@ -77,6 +79,7 @@ class masterController:
         self.config()
 
     def YBF_1(self, params : dict, bottleNum = 1):
+        """Ybf 1."""
         start = time.time()
         self.prepareForMultiGlass(1)
         self.pickGlassFromPlatform(1)
@@ -108,6 +111,7 @@ class masterController:
 
 
     def YBF_2(self, params : dict, bottleNum = 1):
+        """Ybf 2."""
         start = time.time()
         self.pickLip(bottleNum)
         if bottleNum == 1:
@@ -128,7 +132,7 @@ class masterController:
         self.moveTo_upAndDown(0,0)
         #self.relinquishLip(2)
         def move_leg_to(self, x, y):
-            """直接移动滑轨到指定百分比位置（0~140），并等待到位"""
+            """Move the rail to a percentage position in 0..140 and wait for arrival."""
             self.leg.moveTo(x, y)
             self.leg.wait_x()
             self.leg.wait_y()
@@ -140,12 +144,13 @@ class masterController:
         print("time2", time2)
 
     def YBF_3(self, params : dict,bottleNum = 1):
+        """Ybf 3."""
         start = time.time()
         self.moveTo(brain.coordinate_spinCoater_wait_hand)
         mid = time.time()
         self.pickGlassFromSpinCoater()
         self.putToHeater(2, 3)
-        self.relinquishLip(bottleNum)  #加热后再放回滴管
+        self.relinquishLip(bottleNum)  # Return the pipette after heating.
         self.moveTo(self.coordinate_origin)
         end = time.time()
         time3 = end - start
@@ -153,6 +158,7 @@ class masterController:
         print("time3_mid", mid - start)
 
     def YBF_4(self, params : dict):
+        """Ybf 4."""
         start = time.time()
         self.pickGlassFromHeater(2, 3)
         self.putToPlatform(1)
@@ -162,6 +168,7 @@ class masterController:
         print("time4", time4)
 
     def LBF_2(self):
+        """Lbf 2."""
         start = time.time()
         self.pickGlassFromSpinCoater()
         self.putToHeater(2, 3)
@@ -171,6 +178,7 @@ class masterController:
         print("time5", time5)
 
     def LBF_3(self, bottleNum = 1):
+        """Lbf 3."""
         start = time.time()
         self.pickGlassFromHeater(2, 3)
         self.putToPlatform(1)
@@ -201,10 +209,10 @@ class masterController:
         self.moveTo(brain.coordinate_origin)
 
     def _homing_x(self):
-        """X轴回零（临时禁用偏移量，避免干扰搜索）"""
+        """Home X with offsets temporarily disabled to avoid affecting the sensor search."""
         print("正在执行X轴回零...")
 
-        # 1. 保存旧偏移量，然后临时置零
+        # 1. Save the previous offset and temporarily clear it.
         old_offset = self.leg.offset_x
         self.leg.offset_x = 0
         print(f"临时禁用X偏移量，从当前位置开始搜索")
@@ -213,12 +221,12 @@ class masterController:
         step = 1.0
         sensor_triggered = False
 
-        # 2. 获取当前原始位置
+        # 2. Read the current raw position.
         cur_pos = self.leg.getCurrentPos_x()
         raw_pos = cur_pos
         print(f"起始X位置: {cur_pos:.2f}")
 
-        # 3. 先检查传感器是否已经触发
+        # 3. Check whether the sensor is already triggered.
         if self.positionSensor.detection_x():
             sensor_triggered = True
             raw_pos = self.leg.getCurrentPos_x()
@@ -231,7 +239,7 @@ class masterController:
             self.leg.save_offset()
             print(f"X零点已锁定，偏移量 X = {raw_pos:.2f}")'''
 
-        # 4. 从当前位置逐步向负方向移动
+        # 4. Move incrementally in the negative direction.
         for i in range(1, max_steps + 1):
             target = cur_pos - i * step
             print(f"  尝试移动到 X = {target:.2f}")
@@ -240,7 +248,7 @@ class masterController:
                 self.leg.wait_x()
             except TLE as e:
                 print(f"移动到 {target:.2f} 超时，可能到达限位")
-                # 超时后检测传感器
+                # Check the sensor after a motion timeout.
                 if self.positionSensor.detection_x():
                     raw_pos = self.leg.getCurrentPos_x()
                     print(f"X传感器触发！当前位置: {raw_pos:.2f}")
@@ -250,7 +258,7 @@ class masterController:
                     sensor_triggered = True
                 break
 
-            # 正常移动后检测传感器
+            # Check the sensor after normal motion.
             if self.positionSensor.detection_x():
                 raw_pos = self.leg.getCurrentPos_x()
                 print(f"X传感器触发！当前位置: {raw_pos:.2f}")
@@ -260,7 +268,7 @@ class masterController:
                 sensor_triggered = True
                 break
 
-        # 5. 如果回零失败，恢复旧偏移量（避免丢失原有设置）
+        # 5. Restore the previous offset if homing fails.
         if not sensor_triggered:
             print("X轴未触发传感器，恢复原偏移量")
             self.leg.offset_x = old_offset
@@ -281,10 +289,10 @@ class masterController:
             print("X轴回零成功")
 
     def _homing_y(self):
-        """Y轴回零（临时禁用偏移量，避免干扰搜索）"""
+        """Home Y with offsets temporarily disabled to avoid affecting the sensor search."""
         print("正在执行Y轴回零...")
 
-        # 1. 保存旧偏移量，然后临时置零
+        # 1. Save the previous offset and temporarily clear it.
         old_offset = self.leg.offset_y
         self.leg.offset_y = 0
         print(f"临时禁用Y偏移量，从当前位置开始搜索")
@@ -293,12 +301,12 @@ class masterController:
         step = 1.0
         sensor_triggered = False
 
-        # 2. 获取当前原始位置
+        # 2. Read the current raw position.
         cur_pos = self.leg.getCurrentPos_y()
         raw_pos = cur_pos
         print(f"起始Y位置: {cur_pos:.2f}")
 
-        # 3. 先检查传感器是否已经触发
+        # 3. Check whether the sensor is already triggered.
         if self.positionSensor.detection_y():
             sensor_triggered = True
             raw_pos = self.leg.getCurrentPos_y()
@@ -312,7 +320,7 @@ class masterController:
             print(f"Y零点已锁定，偏移量 Y = {raw_pos:.2f}")
             return'''
 
-        # 4. 从当前位置逐步向负方向移动
+        # 4. Move incrementally in the negative direction.
         for i in range(1, max_steps + 1):
             target = cur_pos - i * step
             print(f"  尝试移动到 Y = {target:.2f}")
@@ -321,7 +329,7 @@ class masterController:
                 self.leg.wait_y()
             except TLE as e:
                 print(f" 移动到 {target:.2f} 超时，可能到达限位")
-                # 超时后检测传感器
+                # Check the sensor after a motion timeout.
                 if self.positionSensor.detection_y():
                     raw_pos = self.leg.getCurrentPos_y()
                     print(f"Y传感器触发！当前位置: {raw_pos:.2f}")
@@ -331,7 +339,7 @@ class masterController:
                     sensor_triggered = True
                 break
 
-            # 正常移动后检测传感器
+            # Check the sensor after normal motion.
             if self.positionSensor.detection_y():
                 raw_pos = self.leg.getCurrentPos_y()
                 print(f"Y传感器触发！当前位置: {raw_pos:.2f}")
@@ -341,7 +349,7 @@ class masterController:
                 sensor_triggered = True
                 break
 
-        # 5. 如果回零失败，恢复旧偏移量（避免丢失原有设置）
+        # 5. Restore the previous offset if homing fails.
         if not sensor_triggered:
             print("Y轴未触发传感器，恢复原偏移量")
             self.leg.offset_y = old_offset
@@ -362,6 +370,7 @@ class masterController:
             print("Y轴回零成功")
 
     def getLipsCoordinate(self, num=-1):
+        """Get lips coordinate."""
         if num == -1:
             num = self.lip_num
         if num < 1 or num > len(self.lips_coordinates):
@@ -370,15 +379,16 @@ class masterController:
         return self.lips_coordinates[num - 1]
 
     def init(self):
+        """Init."""
         self.lip_num = 1
-        self.last_picked_num = None  # 记录上次取的吸头编号
+        self.last_picked_num = None  # Remember the last selected tip number.
         self.hand.init()
         self.mouth.init()
         self.leg.init()
         self.leg.set()
         self.coordinate_cur = coordinate(0, 0, 0, 0)
 
-        # 先放松手爪，再抬升Z轴
+        # Release the gripper before raising Z.
         self.relax()
         self.moveTo_upAndDown(Z_SAFE_HAND, Z_SAFE_MOUTH)
 
@@ -397,7 +407,8 @@ class masterController:
     #     self.mouth.moveTo(zm)
 
     def moveTo(self, aim):
-        # 先抬升Z轴到安全高度
+        # Raise Z to the safe height first.
+        """Move to."""
         self.moveTo_upAndDown(Z_SAFE_HAND, Z_SAFE_MOUTH)
         self.coordinate_cur = coordinate(aim.x, aim.y, aim.zh, aim.zm)
         self.hand.moveTo(0)
@@ -407,10 +418,11 @@ class masterController:
         self.mouth.moveTo(aim.zm)
 
     def moveTo_upAndDown(self, zh=0, zm=0):
-        # 手爪限幅：确保不小于 Z_SAFE_HAND（即最小为1）
+        # Clamp the gripper target to at least Z_SAFE_HAND (1).
+        """Move to up and down."""
         if zh < Z_SAFE_HAND:
             zh = Z_SAFE_HAND
-        # 移液器不做限制（或可限制为不能小于 Z_SAFE_MOUTH）
+        # The pipette target is not clamped here; Z_SAFE_MOUTH is a possible limit.
         if zm < Z_SAFE_MOUTH:
             zm = Z_SAFE_MOUTH
 
@@ -421,18 +433,20 @@ class masterController:
         self.mouth.moveTo(zm)
 
     def move_leg_to(self, x, y):
-        """直接移动滑轨到指定百分比位置（0~140），并等待到位"""
+        """Move the rail to a percentage position in 0..140 and wait for arrival."""
         self.leg.moveTo(x, y)
         self.leg.wait_x()
         self.leg.wait_y()
 
     def spin(self, spinInfoList, mode = "speed"):
+        """Spin."""
         if self.coordinate_cur.x == self.coordinate_spinCoater_hand.x and self.coordinate_cur.y == self.coordinate_spinCoater_hand.y:
             self.coordinate_cur.zh = 0
             self.moveTo(self.coordinate_cur)
         self.spinCoater.spin(spinInfoList, mode)
 
     def clamp(self, aim = 30):
+        """Clamp."""
         self.hand.set_rj_clampTorque(50)
         self.hand.clamp(self.hand_aim_position)
         pos = self.hand.query_rj_position()
@@ -441,6 +455,7 @@ class masterController:
         return False
 
     def clamp_with_detection(self):
+        """Clamp with detection."""
         flag = self.clamp()
         if flag:
             self.moveTo_upAndDown(self.coordinate_cur.zh - 1, self.coordinate_cur.zm)
@@ -452,14 +467,17 @@ class masterController:
             self.hand.spiral(0)
 
     def relax(self):
+        """Relax."""
         self.hand.set_rj_clampTorque(50)
         self.hand.clamp_position(36)
 
     def relax_thorough(self):
+        """Relax thorough."""
         self.hand.set_rj_clampTorque(50)
         self.hand.clamp(0)
 
     def detect_hand_loose(self):
+        """Detect hand loose."""
         self.clamp()
         pos = self.hand.query_rj_position()
         if pos >= self.hand_aim_position:
@@ -469,6 +487,7 @@ class masterController:
         return False
 
     def detect_mouth_suck(self):
+        """Detect mouth suck."""
         response = self.mouth.query_adp()
         if response == 'not sucked':
             self.emergence = True
@@ -477,57 +496,50 @@ class masterController:
         return False
 
     def pickLip(self, num=-1):
-        """
-        取吸头（若 num=-1，则取当前 lip_num，然后自动递增）
-        参数：
-            num: 吸头编号（1~25）。若为 -1，则使用当前编号 self.lip_num。
-        """
+        """Pick tip number 1..25; -1 selects lip_num and advances the automatic counter."""
         auto = (num == -1)
         if auto:
-            # 如果当前编号超过总数，重置为1（循环使用）
+            # Wrap the tip number to 1 after reaching the total count.
             if self.lip_num > len(self.lips_coordinates):
                 self.lip_num = 1
             num = self.lip_num
-            # 取用后立即递增，为下次做准备
+            # Increment immediately after pickup for the next operation.
             self.lip_num += 1
         co = self.getLipsCoordinate(num)
         if co is None:
             return
-        # 先移动到吸头位置（下压到正常深度）
+        # Move to the tip and descend to the normal attachment depth.
         self.moveTo(co)
-        # 额外再往下压 2 个单位（让吸头套紧）
+        # Descend 2 additional units to seat the tip firmly.
         co.zm += 2
         self.moveTo_upAndDown(0, co.zm)
-        # 压紧后抬升到安全高度（防止取完后横移时刮擦）
+        # Raise to the safe height before lateral travel.
         self.moveTo_upAndDown(0, Z_SAFE_MOUTH)
-        # 如果自动模式，记录上次取的编号（可选）
+        # Remember the selected tip in automatic mode.
         if auto:
             self.last_picked_num = num
 
     def relinquishLip(self, num=-1):
-        """
-        放回吸头（默认放回原处，不递增编号）
-        参数：
-            num: 吸头编号（1~25）。若为 -1，则放回当前编号 self.lip_num（已递增后的值，即上次使用的编号+1）
-        """
+        """Return a tip to its slot; -1 uses the previous automatic pickup number."""
         if num == -1:
-            # 如果 lip_num 已被 pickLip 递增，这里需要取的是上次使用的编号
+            # pickLip already incremented lip_num; use the previous number.
             if hasattr(self, 'last_picked_num'):
                 num = self.last_picked_num
             else:
-                num = self.lip_num - 1  # 回退一步
+                num = self.lip_num - 1  # Step back by one number.
         co = self.getLipsCoordinate(num)
         if co is None:
             return
-        # 1. 先向下多压 10 个单位，确保吸头完全插回孔位
+        # 1. Descend 10 additional units to return the tip fully into its slot.
         co.zm -= 10
         self.moveTo(co)
-        # 2. 弹出吸头（移液器弹射机构动作）
+        # 2. Activate the pipette tip ejection mechanism.
         self.mouth.secedeTip()
-        # 3. 放回后立即将移液器抬升到安全高度（zm=0），避免横移时碰撞
+        # 3. Raise the pipette to zm=0 before lateral travel.
         self.moveTo_up_andDown(0, Z_SAFE_MOUTH)
 
     def suckFromBottleOne(self, vol):
+        """Suck from bottle one."""
         if(self.volume_current > 1e-9):
             print("sucking with liquids!!!!")
 
@@ -538,6 +550,7 @@ class masterController:
         if self.detect_mouth_suck(): print("mouth does not suck")
 
     def suckFromBottleTwo(self, vol):
+        """Suck from bottle two."""
         if (self.volume_current > 1e-9):
             print("sucking with liquids!!!!")
 
@@ -549,6 +562,7 @@ class masterController:
         if self.detect_mouth_suck(): print("mouth does not suck")
 
     def suckFromBottleThree(self, vol):
+        """Suck from bottle three."""
         if (self.volume_current > 1e-9):
             print("sucking with liquids!!!!")
 
@@ -559,6 +573,7 @@ class masterController:
         if self.detect_mouth_suck(): print("mouth does not suck")
 
     def spitToSpinCoater(self, vol = -1):
+        """Spit to spin coater."""
         if vol == -1:
             vol = self.volume_current
 
@@ -568,6 +583,7 @@ class masterController:
         self.volume_current = 0
 
     def pickGlassFromPlatform(self, num=1, flag=0):
+        """Pick glass from platform."""
         if num < 1 or num > 24:
             print('错误：玻璃编号必须在 1~24 之间')
             return
@@ -589,6 +605,7 @@ class masterController:
             self.relax()
 
     def putToSpinCoater(self):
+        """Put to spin coater."""
         if self.detect_hand_loose():
             print('hand loose')
             self.moveTo(self.coordinate_origin)
@@ -609,6 +626,7 @@ class masterController:
         self.relax()
 
     def pickGlassFromSpinCoater(self):
+        """Pick glass from spin coater."""
         self.relax_thorough()
         self.moveTo(self.coordinate_spinCoater_hand)
         self.clamp_with_detection()
@@ -619,6 +637,7 @@ class masterController:
             self.relax()
 
     def putToPlatform(self, num=1):
+        """Put to platform."""
         if self.detect_hand_loose():
             print('hand loose')
             self.moveTo(self.coordinate_origin)
@@ -631,12 +650,13 @@ class masterController:
         if aimCoordinate is None:
             print(f'错误：第 {num} 片玻璃未标定')
             return
-        # 注意放下时需要减去高度补偿
+        # Subtract the height compensation when placing the glass.
         zh = aimCoordinate.zh - self.distance_platform_pick_and_put
         self.moveTo(coordinate(aimCoordinate.x, aimCoordinate.y, zh, 0))
         self.relax()
 
     def pickGlassFromHeater(self, step = 1, num = 1, flag = 0): #flag = 1 : change to vertical direction to grab glass from heater whose space is limited
+        """Pick glass from heater."""
         aim = None
         if step == 1:
             if num == 1:
@@ -686,6 +706,7 @@ class masterController:
             self.relax()
 
     def putToHeater(self, step = 1, num = 1, flag = 0):
+        """Put to heater."""
         if self.detect_hand_loose():
             print('hand loose')
             self.moveTo(self.coordinate_origin)
@@ -733,6 +754,7 @@ class masterController:
             self.relax()
 
     def openBottleOne(self):
+        """Open bottle one."""
         self.relax_thorough()
         self.hand.spiral(0)
         self.moveTo(self.coordinate_bottle_one_hand)
@@ -750,6 +772,7 @@ class masterController:
             self.relax()
 
     def closeBottleOne(self):
+        """Close bottle one."""
         if self.detect_hand_loose():
             print('hand loose')
             self.moveTo(self.coordinate_origin)
@@ -761,6 +784,7 @@ class masterController:
         self.relax_thorough()
 
     def openBottleTwo(self):
+        """Open bottle two."""
         self.relax_thorough()
         self.hand.spiral(0)
         self.moveTo(self.coordinate_bottle_two_hand)
@@ -778,6 +802,7 @@ class masterController:
             self.relax()
 
     def closeBottleTwo(self):
+        """Close bottle two."""
         if self.detect_hand_loose():
             print('hand loose')
             self.moveTo(self.coordinate_origin)
@@ -789,6 +814,7 @@ class masterController:
         self.relax_thorough()
 
     def openBottleThree(self):
+        """Open bottle three."""
         self.relax_thorough()
         self.hand.spiral(0)
         self.moveTo(self.coordinate_bottle_three_hand)
@@ -806,6 +832,7 @@ class masterController:
             self.relax()
 
     def closeBottleThree(self):
+        """Close bottle three."""
         if self.detect_hand_loose():
             print('hand loose')
             self.moveTo(self.coordinate_origin)
@@ -817,6 +844,7 @@ class masterController:
         self.relax_thorough()
 
     def prepareForGlass_onlyTheFirstPosition(self, num):
+        """Prepare for glass only the first position."""
         aimCoordinate = self.coordinate_glass_first
 
         self.moveTo(aimCoordinate)
@@ -831,6 +859,7 @@ class masterController:
         self.hand.spiral(0)
 
     def prepareForHeater(self, step = 1, num = 1):
+        """Prepare for heater."""
         aimCoordinate = None
         if step == 1:
             if num == 1:
@@ -872,6 +901,7 @@ class masterController:
         self.hand.spiral(0)
 
     def putToEvacuationSpace(self):
+        """Put to evacuation space."""
         if self.detect_hand_loose():
             print('hand loose')
             self.moveTo(self.coordinate_origin)
@@ -881,6 +911,7 @@ class masterController:
         self.relax()
 
     def pickGlassFromEvacuationSpace(self):
+        """Pick glass from evacuation space."""
         self.moveTo(self.coordinate_evacuation_space)
         self.clamp_with_detection()
 
@@ -890,6 +921,7 @@ class masterController:
             self.relax()
 
     def OneStepMethod_A(self, id, vol = 30, spinInfoList = None):
+        """One step method a."""
         if spinInfoList is None:
             spinInfoList = [SpinInfo(1500, 10, 1, 1)]
         self.prepareForMultiGlass(id)
@@ -904,6 +936,7 @@ class masterController:
         self.relinquishLip(1)
 
     def OneStepMethod_B(self, vol = 30):
+        """One step method b."""
         self.pickLip(2)
         self.openBottleTwo()
         self.suckFromBottleTwo(vol)  # 30
@@ -913,15 +946,17 @@ class masterController:
         self.moveTo_upAndDown(0,0)
 
     def OneStepMethod_H(self, id):
+        """One step method h."""
         self.moveTo(self.coordinate_spinCoater_wait_hand)
         self.pickGlassFromSpinCoater()
-        heater_id = self.Heater_All.AssignGlass(id) #这里改了，用heater_all替代了heater1
+        heater_id = self.Heater_All.AssignGlass(id) # Use heater_all in place of heater1.
         self.putToHeater((heater_id - 1) // 4 + 1, (heater_id - 1) % 4 + 1)
         self.spinCoater.returnToOriginOfSingleRevolution_notBlocked()
-        self.relinquishLip(2)  #加热后再放回滴管
+        self.relinquishLip(2)  # Return the pipette after heating.
         self.moveTo(self.coordinate_origin)
 
     def OneStepMethod_T(self, id):
+        """One step method t."""
         print("in T")
         heater_id = self.Heater_All.RemoveGlass(id)
         self.pickGlassFromHeater((heater_id - 1) // 4 + 1, (heater_id - 1) % 4 + 1)
@@ -929,6 +964,7 @@ class masterController:
         self.moveTo(self.coordinate_origin)
 
     def LBF(self):
+        """Lbf."""
         self.spinCoater.returnToOriginOfSingleRevolution(type='glass')
         self.moveTo(brain.coordinate_origin)
         self.prepareForGlass_onlyTheFirstPosition(1)
@@ -942,7 +978,7 @@ class masterController:
         self.spin([SpinInfo(1500, 10, 1, 1)], mode = "position")
         self.relinquishLip(1)
         self.moveTo(brain.coordinate_spinCoater_wait_hand)
-        time.sleep(4)  # 旋涂后等待测试
+        time.sleep(4)  # Test the wait after spin coating.
         self.pickGlassFromSpinCoater()
         self.putToHeater(2,1)
         self.moveTo(brain.coordinate_origin)
@@ -960,7 +996,7 @@ class masterController:
         self.spin([SpinInfo(2000, 10, 1, 1)], mode = "position")
         self.relinquishLip(2)
         self.moveTo(brain.coordinate_spinCoater_wait_hand)
-        time.sleep(5)  # 旋涂后等待测试
+        time.sleep(5)  # Test the wait after spin coating.
         self.pickGlassFromSpinCoater()
         self.putToHeater(1,1)
         self.moveTo(brain.coordinate_origin)
@@ -970,6 +1006,7 @@ class masterController:
         self.moveTo(brain.coordinate_origin)
 
     def YBF(self, params : dict):
+        """Ybf."""
         self.spinCoater.returnToOriginOfSingleRevolution(type='glass')
         self.moveTo(brain.coordinate_origin)
         self.prepareForGlass_onlyTheFirstPosition(1)
@@ -1003,6 +1040,7 @@ class masterController:
     def testSpin(self):
         #self.moveTo(brain.coordinate_origin)
 
+        """Test spin."""
         self.pickGlassFromPlatform(1)
         self.putToSpinCoater()
 
@@ -1016,52 +1054,53 @@ class masterController:
         self.moveTo(self.coordinate_origin)
 
     def zksz(self):
-        """
-        完整工艺流程（直接使用硬编码坐标，每步之间延时 1s）
-        吸头：先用 (3,4) 坐标 98.4 3.5 99，再用 (3,5) 坐标 96.1 3.5 99
-        丢吸头时移液器 Z 轴高度设为 90
-        """
-        # ========== 所有坐标直接定义 ==========
-        # 吸头坐标
+        """Run the legacy process with hardcoded coordinates and 1 s inter-step delays.
+
+        Use tips (3, 4) at (98.4, 3.5, 99) and (3, 5) at (96.1, 3.5, 99); discard at pipette Z=90."""
+        # Define all coordinates directly.
+        # Pipette tip coordinates.
         lip1_x, lip1_y, lip1_z = 97.7, 1.8, 99  # (3,5)
         lip2_x, lip2_y, lip2_z = 95.3, 1.8, 99  # (3,6)
-        lip_drop_z = 90  # 丢吸头时移液器 Z 轴高度
+        lip_drop_z = 90  # Pipette Z height for discarding a tip.
 
-        # 旋涂仪
+        # Spin coater coordinates.
         sc_hand_x, sc_hand_y, sc_hand_z = 46.5, 65.5, 87
         sc_mouth_x, sc_mouth_y, sc_mouth_z = 56.0, 87.8, 18
 
-        # 1号瓶
+        # Bottle 1 coordinates.
         b1_hand_x, b1_hand_y, b1_hand_z = 47.3, 11.0, 80
         b1_mouth_x, b1_mouth_y, b1_mouth_z = 56.7, 33.5, 45
         b1_deg = 360
 
-        # 3号瓶
+        # Bottle 3 coordinates.
         b3_hand_x, b3_hand_y, b3_hand_z = 39.8, 24.9, 80
         b3_mouth_x, b3_mouth_y, b3_mouth_z = 49.2, 47.0, 45
         b3_deg = 360
 
-        # 玻璃位置（第2块）
+        # Coordinates of the second glass.
         glass_x, glass_y, glass_z = 88.7, 19.0, 87.5
 
-        # 退火台
+        # Annealing station coordinates.
         heater_x, heater_y, heater_z = 15, 10, 75
 
-        # 真空泵
+        # Vacuum station coordinates.
         vacuum_x, vacuum_y, vacuum_z = 0, 97, 96.5
 
-        # 安全高度
+        # Safe height.
         Z_SAFE_HAND = 1.0
         Z_SAFE_MOUTH = 0.0
 
-        # ========== 辅助函数 ==========
+        # Helper functions.
         def move_hand(x, y, z):
+            """Move hand."""
             self.moveTo(coordinate(x, y, z, Z_SAFE_MOUTH))
 
         def move_mouth(x, y, z):
+            """Move mouth."""
             self.moveTo(coordinate(x, y, Z_SAFE_HAND, z))
 
         def pick_glass(x, y, z):
+            """Pick glass."""
             move_hand(x, y, z)
             self.clamp_with_detection()
             if self.detect_hand_loose():
@@ -1070,24 +1109,28 @@ class masterController:
             time.sleep(1)
 
         def put_glass(x, y, z):
+            """Put glass."""
             move_hand(x, y, z)
             self.relax()
             self.moveTo_upAndDown(Z_SAFE_HAND, Z_SAFE_MOUTH)
             time.sleep(1)
 
         def pick_lip(x, y, z):
+            """Pick lip."""
             move_mouth(x, y, z)
-            # self.moveTo_upAndDown(Z_SAFE_HAND, z + 2)  # 额外下压 2 个单位
+            # Disabled extra descent: self.moveTo_upAndDown(Z_SAFE_HAND, z + 2).
             # self.moveTo_upAndDown(Z_SAFE_HAND, Z_SAFE_MOUTH)
             time.sleep(1)
 
         def drop_lip(x, y):
+            """Drop lip."""
             move_mouth(x, y, lip_drop_z)
             self.mouth.secedeTip()
             self.moveTo_upAndDown(Z_SAFE_HAND, Z_SAFE_MOUTH)
             time.sleep(1)
 
         def open_bottle(x, y, z, deg):
+            """Open bottle."""
             move_hand(x, y, z)
             self.relax_thorough()
             self.hand.spiral(0)
@@ -1099,6 +1142,7 @@ class masterController:
             time.sleep(1)
 
         def close_bottle(x, y, z):
+            """Close bottle."""
             move_hand(x, y, z)
             self.hand.spiral(0)
             self.relax_thorough()
@@ -1107,78 +1151,80 @@ class masterController:
             time.sleep(1)
 
         def suck(x, y, z, vol):
+            """Suck."""
             move_mouth(x, y, z)
             self.mouth.suck(vol)
             self.moveTo_upAndDown(Z_SAFE_HAND, Z_SAFE_MOUTH)
             time.sleep(1)
 
         def spit(x, y, z, vol=0):
+            """Spit."""
             move_mouth(x, y, z)
             self.mouth.spit(vol)
             self.moveTo_upAndDown(Z_SAFE_HAND, Z_SAFE_MOUTH)
             time.sleep(1)
 
-        # ========== 开始流程 ==========
+        # Start the process sequence.
 
-        # 1. 从平台取第2块玻璃 -> 放到旋涂仪
+        # 1. Transfer glass 2 from the tray to the spin coater.
         print("取玻璃...")
         pick_glass(glass_x, glass_y, glass_z)
         print("放到旋涂仪...")
         put_glass(sc_hand_x, sc_hand_y, sc_hand_z)
 
-        # 2. 取第一根吸头 (3,4)
+        # 2. Pick the first tip at row 3, column 4.
         print("取吸头 1...")
         pick_lip(lip1_x, lip1_y, lip1_z)
 
-        # 3. 开1号瓶
+        # 3. Open bottle 1.
         print("开1号瓶...")
         open_bottle(b1_hand_x, b1_hand_y, b1_hand_z, b1_deg)
 
-        # 4. 吸 SAM 100 微升
+        # 4. Aspirate 100 microliters of SAM.
         print("吸 SAM...")
         suck(b1_mouth_x, b1_mouth_y, b1_mouth_z, 100)
 
-        # 5. 关1号瓶
+        # 5. Close bottle 1.
         print("关1号瓶...")
         close_bottle(b1_hand_x, b1_hand_y, b1_hand_z)
 
-        # 6. 滴到旋涂仪
+        # 6. Dispense onto the spin coater.
         print("滴 SAM...")
         spit(sc_mouth_x, sc_mouth_y, sc_mouth_z)
 
-        # 7. 旋涂 SAM（5000rpm, 30s, 加速度5000 → 加速时间1.0s）
+        # 7. Spin SAM at 5000 rpm for 30 s; 5000 rpm/s gives a 1 s ramp.
         print("旋涂 SAM...")
         spin1 = [SpinInfo(speed=5000, spinTime=10, acceleratingTime=1.0, deceleratingTime=1.0)]
         self.spinCoater.spin(spin1, mode="speed")
         time.sleep(1)
 
-        # 8. 旋涂期间放回吸头 (3,4)
+        # 8. Return the tip at row 3, column 4 during spinning.
         print("放回吸头 1...")
         drop_lip(lip1_x, lip1_y)
 
-        # 9. 等待旋涂结束
+        # 9. Wait for spinning to finish.
         print("等待 SAM 旋涂结束...")
         if self.spinCoater.spinThread.is_alive():
             self.spinCoater.spinThread.join()
         time.sleep(1)
 
-        # 21. 打开真空泵盖子
+        # 21. Open the vacuum station lid.
         print("打开真空泵盖子...")
         self.evacuationSpace.openLid()
         time.sleep(1)
 
-        # 22. 从旋涂仪取玻璃 -> 放到真空泵
+        # 22. Transfer the glass from the spin coater to the vacuum station.
         print("从旋涂仪取玻璃...")
         pick_glass(sc_hand_x, sc_hand_y, sc_hand_z)
         print("放到真空泵...")
         put_glass(vacuum_x, vacuum_y, vacuum_z)
 
-        # 23. 关闭真空泵盖子
+        # 23. Close the vacuum station lid.
         print("关闭真空泵盖子...")
         self.evacuationSpace.closeLid()
         time.sleep(1)
 
-        # 24. 打开电磁阀，20s 后关闭
+        # 24. Open the solenoid valve and close it after 20 s.
         print("打开电磁阀...")
         self.valve.setPowerOn()
         time.sleep(10)
@@ -1186,27 +1232,27 @@ class masterController:
         self.valve.setPowerOff()
         time.sleep(1)
 
-        # 25. 打开真空泵盖子
+        # 25. Open the vacuum station lid.
         print("打开真空泵盖子...")
         self.evacuationSpace.openLid()
         time.sleep(1)
 
-        # 26. 从真空泵取玻璃 -> 放到退火台
+        # 26. Transfer the glass to the annealing station.
         print("从真空泵取玻璃...")
         pick_glass(vacuum_x, vacuum_y, vacuum_z)
         print("放到退火台...")
         put_glass(heater_x, heater_y, heater_z)
 
-        # 27. 关闭真空泵盖子
+        # 27. Close the vacuum station lid.
         print("关闭真空泵盖子...")
         self.evacuationSpace.closeLid()
         time.sleep(1)
 
-        # 28. 退火 20 分钟
+        # 28. Anneal for 20 minutes in the intended recipe.
         print("退火 20 分钟...（本次为模拟实验，模拟退火10秒）")
         time.sleep(10)
 
-        # 29. 从退火台取玻璃 -> 放回原平台位置
+        # 29. Return the glass from the annealing station to its original tray slot.
         print("从退火台取玻璃...")
         pick_glass(heater_x, heater_y, heater_z)
         print("放回原平台...")
@@ -1217,6 +1263,7 @@ class masterController:
 
 
     def close(self):
+        """Close."""
         self.hand.close()
         self.mouth.close()
         self.leg.close()
@@ -1227,32 +1274,33 @@ class masterController:
 
     #dx,dy = 8.7 24.5
     def config(self):
-        # 手爪抓放玻璃的精确坐标
+        # Precise gripper coordinates for glass pickup and placement.
+        """Config."""
         self.coordinate_spinCoater_hand = coordinate(48.5, 64.5, 87.1, 0)
-        # 放置玻璃时手爪从上方再下降的距离（保持原值，可后续微调）
+        # Additional gripper descent for placement; retain the existing value pending calibration.
         self.distance_spinCoater_pick_and_drop = 0.5
-        # 手爪等待位置（X、Y 与 hand 相同，Z 抬到安全高度）
+        # Gripper waiting pose uses the same X/Y and safe Z.
         self.coordinate_spinCoater_wait_hand = coordinate(48.5, 64.5, 0, 0)
-        # 移液器滴液坐标
+        # Pipette dispensing coordinates.
         self.coordinate_spinCoater_mouth = coordinate(57.2, 90.0, 0, 18)
-        # 移液器等待位置（X、Y 与 mouth 相同，Z 抬到安全高度）
+        # Pipette waiting pose uses the same X/Y and safe Z.
         self.coordinate_spinCoater_wait_mouth = coordinate(57.2, 90.0, 0, 0)
         self.coordinate_origin = coordinate(0, 0, 0, 0)
 
-        self.glass_coordinates = [coordinate(0, 0, 0, 0) for _ in range(24)]  #玻璃坐标
+        self.glass_coordinates = [coordinate(0, 0, 0, 0) for _ in range(24)]  # Glass coordinates.
         self.distance_platform_pick_and_put = 0.5
 
         # self.coordinate_lips_first = coordinate(110, 1.5, 0, 99)#94
         # self.coordinate_lips_12th = coordinate(85.15, 1.5, 0, 99)
-        # self.coordinate_lips_manyth = coordinate(85.15, 47.5, 0, 0)#待改
+        # Disabled tip-coordinate candidate, pending calibration.
 
         self.coordinate_garbage = coordinate(30, 0, 0, 0)
 
-        # 1-3号瓶子手爪坐标
+        # Gripper coordinates for bottles 1..3.
         self.coordinate_bottle_one_hand = coordinate(48.2, 12.2, 80, 0)
         self.coordinate_bottle_two_hand = coordinate(40.8, 11.7, 80, 0)
         self.coordinate_bottle_three_hand = coordinate(41.6, 26.7, 80, 0)
-        #1-3号瓶子移液器坐标
+        # Pipette coordinates for bottles 1..3.
         self.coordinate_bottle_one_mouth = coordinate(58.0, 36.0, 0, 45)
         self.coordinate_bottle_two_mouth = coordinate(49.5, 34.0, 0, 45)
         self.coordinate_bottle_three_mouth = coordinate(49.2, 50.0, 0, 45)
@@ -1278,103 +1326,104 @@ class masterController:
         self.volume_current = 0.0
         self.hand_aim_position = 70
 
-        # ----- 直接存储24片玻璃的精确坐标（按索引赋值）-----
-        self.glass_coordinates = [None] * 24  # 索引 0~23 对应编号 1~24
+        # Store the measured coordinates of 24 glasses by index.
+        self.glass_coordinates = [None] * 24  # Indices 0..23 correspond to glass numbers 1..24.
 
-        # 第1行
-        self.glass_coordinates[0] = coordinate(95.3, 19.0, 87.5, 0)  # 1号
-        self.glass_coordinates[1] = coordinate(88.7, 19.0, 87.5, 0)  # 2号
-        self.glass_coordinates[2] = coordinate(79.1, 19.0, 87.5, 0)  # 3号
-        self.glass_coordinates[3] = coordinate(72.6, 19.0, 87.5, 0)  # 4号
+        # Row 1.
+        self.glass_coordinates[0] = coordinate(95.3, 19.0, 87.5, 0)  # Glass 1.
+        self.glass_coordinates[1] = coordinate(88.7, 19.0, 87.5, 0)  # Glass 2.
+        self.glass_coordinates[2] = coordinate(79.1, 19.0, 87.5, 0)  # Glass 3.
+        self.glass_coordinates[3] = coordinate(72.6, 19.0, 87.5, 0)  # Glass 4.
 
-        # 第2行
-        self.glass_coordinates[4] = coordinate(95.5, 32.0, 87.5, 0)  # 5号
-        self.glass_coordinates[5] = coordinate(88.7, 32.0, 87.5, 0)  # 6号
-        self.glass_coordinates[6] = coordinate(79.2, 32.0, 87.5, 0)  # 7号
-        self.glass_coordinates[7] = coordinate(72.5, 32.0, 87.5, 0)  # 8号
+        # Row 2.
+        self.glass_coordinates[4] = coordinate(95.5, 32.0, 87.5, 0)  # Glass 5.
+        self.glass_coordinates[5] = coordinate(88.7, 32.0, 87.5, 0)  # Glass 6.
+        self.glass_coordinates[6] = coordinate(79.2, 32.0, 87.5, 0)  # Glass 7.
+        self.glass_coordinates[7] = coordinate(72.5, 32.0, 87.5, 0)  # Glass 8.
 
-        # 第3行
-        self.glass_coordinates[8] = coordinate(95.5, 45.5, 87.5, 0)  # 9号
-        self.glass_coordinates[9] = coordinate(88.7, 45.5, 87.5, 0)  # 10号
-        self.glass_coordinates[10] = coordinate(79.1, 45.5, 87.5, 0)  # 11号
-        self.glass_coordinates[11] = coordinate(72.6, 45.5, 87.5, 0)  # 12号
+        # Row 3.
+        self.glass_coordinates[8] = coordinate(95.5, 45.5, 87.5, 0)  # Glass 9.
+        self.glass_coordinates[9] = coordinate(88.7, 45.5, 87.5, 0)  # Glass 10.
+        self.glass_coordinates[10] = coordinate(79.1, 45.5, 87.5, 0)  # Glass 11.
+        self.glass_coordinates[11] = coordinate(72.6, 45.5, 87.5, 0)  # Glass 12.
 
-        # 第4行
-        self.glass_coordinates[12] = coordinate(95.5, 59.3, 87.5, 0)  # 13号
-        self.glass_coordinates[13] = coordinate(88.7, 59.3, 87.5, 0)  # 14号
-        self.glass_coordinates[14] = coordinate(79.3, 59.3, 87.5, 0)  # 15号
-        self.glass_coordinates[15] = coordinate(72.6, 59.3, 87.5, 0)  # 16号
+        # Row 4.
+        self.glass_coordinates[12] = coordinate(95.5, 59.3, 87.5, 0)  # Glass 13.
+        self.glass_coordinates[13] = coordinate(88.7, 59.3, 87.5, 0)  # Glass 14.
+        self.glass_coordinates[14] = coordinate(79.3, 59.3, 87.5, 0)  # Glass 15.
+        self.glass_coordinates[15] = coordinate(72.6, 59.3, 87.5, 0)  # Glass 16.
 
-        # 第5行
-        self.glass_coordinates[16] = coordinate(95.7, 73.2, 87.5, 0)  # 17号
-        self.glass_coordinates[17] = coordinate(88.9, 73.2, 87.5, 0)  # 18号
-        self.glass_coordinates[18] = coordinate(79.4, 73.2, 87.5, 0)  # 19号
-        self.glass_coordinates[19] = coordinate(72.7, 73.2, 87.5, 0)  # 20号
+        # Row 5.
+        self.glass_coordinates[16] = coordinate(95.7, 73.2, 87.5, 0)  # Glass 17.
+        self.glass_coordinates[17] = coordinate(88.9, 73.2, 87.5, 0)  # Glass 18.
+        self.glass_coordinates[18] = coordinate(79.4, 73.2, 87.5, 0)  # Glass 19.
+        self.glass_coordinates[19] = coordinate(72.7, 73.2, 87.5, 0)  # Glass 20.
 
-        # 第6行
-        self.glass_coordinates[20] = coordinate(95.5, 86.7, 87.5, 0)  # 21号
-        self.glass_coordinates[21] = coordinate(88.9, 86.2, 87.5, 0)  # 22号
-        self.glass_coordinates[22] = coordinate(79.4, 86.2, 87.5, 0)  # 23号
-        self.glass_coordinates[23] = coordinate(72.9, 86.7, 87.5, 0)  # 24号
+        # Row 6.
+        self.glass_coordinates[20] = coordinate(95.5, 86.7, 87.5, 0)  # Glass 21.
+        self.glass_coordinates[21] = coordinate(88.9, 86.2, 87.5, 0)  # Glass 22.
+        self.glass_coordinates[22] = coordinate(79.4, 86.2, 87.5, 0)  # Glass 23.
+        self.glass_coordinates[23] = coordinate(72.9, 86.7, 87.5, 0)  # Glass 24.
 
-        # # ----- 玻璃平台配置（4列×6行，共24片）-----
+        # Historical tray layout: 4 columns by 6 rows, 24 glasses.
         # self.glass_z = 88
         #
-        # # 第一列X坐标（所有行第一列相同）—— 按1号玻璃 x=95.3
+        # First-column X is common to all rows; glass 1 has x=95.3.
         # x_first_col = 95.3
         #
-        # # 列间距（从左到右）：第1→2, 2→3, 3→4
+        # Column spacings are measured between columns 1->2, 2->3, and 3->4.
         # col_spacings = [6.6, 9.6, 6.5]
         #
-        # # 计算各列X坐标（相对于第一列向左偏移）
+        # Calculate column X coordinates by subtracting offsets from the first column.
         # x_offsets = [0.0]
         # for d in col_spacings:
         #     x_offsets.append(x_offsets[-1] + d)
         #
-        # # 各列实际X坐标
+        # Measured X coordinates for each column.
         # col_x = [x_first_col - offset for offset in x_offsets]
         # # col_x = [95.3, 88.7, 79.1, 72.6]
         #
-        # # 行参数—— 按1号玻璃 y=19.0
-        # first_row_y = 19.0  # 第一行坐标
-        # row_spacing = 13.54  # 行间距
+        # Row parameters use glass 1 at y=19.0.
+        # Historical first_row_y = 19.0.
+        # Historical row_spacing = 13.54.
         #
-        # # 各行Y坐标
+        # Y coordinates for each row.
         # row_y = [first_row_y + i * row_spacing for i in range(6)]
         # # row_y = [19.0, 32.54, 46.08, 59.62, 73.16, 86.7]
         #
-        # # ----- 生成24块玻璃坐标 -----
+        # Generate the 24 glass coordinates.
         # self.glass_coordinates = []
-        # for row in range(6):  # 6行
+        # Historical loop over 6 rows.
         #     y = first_row_y + row * row_spacing
-        #     for col in range(4):  # 4列
+        # Historical loop over 4 columns.
         #         x = col_x[col]
         #         self.glass_coordinates.append(coordinate(x, y, self.glass_z, 0))
         #
-        # # ----- 用实测值覆盖第21和第24块玻璃坐标（下方两个对角）-----
-        # # 编号21 → 索引20；编号24 → 索引23
-        # self.glass_coordinates[20] = coordinate(95.4, 86.7, 88, 0)  # 21号玻璃
-        # self.glass_coordinates[23] = coordinate(72.9, 86.7, 88, 0)  # 24号玻璃
+        # Override glasses 21 and 24 with measurements at the lower diagonal corners.
+        # Glass 21 uses index 20; glass 24 uses index 23.
+        # Historical glass 21 coordinate: (95.4, 86.7, 88, 0).
+        # Historical glass 24 coordinate: (72.9, 86.7, 88, 0).
 
-        # ========== 吸头坐标（5行×5列，共25个） ==========
-        # 已知：第三排第四列 (行3,列4) 坐标 (101.3, 4.8)，zm=93
-        # 列间距 dx = 2.2（列号增加，X减小），行间距 dy = 4.5（行号增加，Y增大）
+        # Tip layout: 5 rows by 5 columns, 25 tips.
+        # Reference tip at row 3, column 4: (101.3, 4.8), zm=93.
+        # Column pitch dx=2.2 decreases X; row pitch dy=4.5 increases Y.
         center_x = 101.3
         center_y = 4.8
         dx = 2.2
         dy = 4.5
         zm_lip = 93
 
-        # 生成行号1~5，列号2~6
+        # Generate rows 1..5 and columns 2..6.
         self.lips_coordinates = []
-        for row in range(1, 6):  # 1~5行
+        for row in range(1, 6):  # Rows 1..5.
             y = center_y + (row - 3) * dy
-            for col in range(2, 7):  # 2~6列
-                x = center_x + (4 - col) * dx  # 列号越大X越小
+            for col in range(2, 7):  # Columns 2..6.
+                x = center_x + (4 - col) * dx  # Higher column numbers have smaller X.
                 self.lips_coordinates.append(coordinate(x, y, 0, zm_lip))
 
 
     def prepareForSpinCoater(self):
+        """Prepare for spin coater."""
         aimCoordinate = self.coordinate_spinCoater_hand
         self.relax_thorough()
         self.moveTo(aimCoordinate)
@@ -1389,6 +1438,7 @@ class masterController:
         self.hand.spiral(0)
 
     def prepareForMultiGlass(self, num):
+        """Prepare for multi glass."""
         if num < 1 or num > 24:
             print('错误：玻璃编号必须在 1~24 之间')
             return
@@ -1410,6 +1460,7 @@ class masterController:
         self.hand.spiral(0)
 
     def returnToOrigin_x(self):  # stop at 21.43
+        """Return to origin x."""
         x_0 = self.leg.getCurrentPos_x()
         y_0 = self.leg.getCurrentPos_y()
         if x_0 <= 25:
@@ -1462,6 +1513,7 @@ class masterController:
         print("result in :", x_0, y_0)
 
     def returnToOrigin_y(self):  # stop at 11.835
+        """Return to origin y."""
         x_0 = self.leg.getCurrentPos_x()
         y_0 = self.leg.getCurrentPos_y()
         if y_0 <= 15:
@@ -1496,6 +1548,7 @@ class masterController:
         print("result in :", x_0, y_0)
 
     def returnToOrigin(self):
+        """Return to origin."""
         self.returnToOrigin_x()
         self.returnToOrigin_y()
         print("result in finally: ", self.leg.getCurrentPos_x(), self.leg.getCurrentPos_y())
@@ -1505,7 +1558,7 @@ class masterController:
 #     try:
 #         brain = masterController()
 #         brain.moveTo(brain.coordinate_spinCoater_hand)
-#         # 旋涂: 300转/秒, 加速10秒, 旋转20秒
+# Historical spin settings: 300 revolutions/s, 10 s acceleration, 20 s spinning.
 #         brain.spin([SpinInfo(300, 10, 20, 1)], mode="position")
 #         time.sleep(22)
 #         #brain.moveTo(brain.coordinate_glass_first)
@@ -1559,7 +1612,7 @@ class masterController:
 #             brain.moveTo(brain.coordinate_origin)
 #             brain.spin(params['SpinOneParams'], mode="position")
 #             time.sleep(18)
-#             brain.evacuationSpace.openLid()  # 动盖子之前保证机械臂在原点！！！
+# Keep the arm at its origin before moving the vacuum lid.
 #             brain.pickGlassFromSpinCoater()
 #             brain.putToEvacuationSpace()
 #             brain.moveTo(brain.coordinate_origin)
@@ -1600,7 +1653,7 @@ class masterController:
 #         brain.moveTo(brain.coordinate_origin)
 #         brain.spin(params['SpinOneParams'], mode="position")
 #         time.sleep(18)
-#         brain.evacuationSpace.openLid()   #动盖子之前保证机械臂在原点！！！
+# Keep the arm at its origin before moving the vacuum lid.
 #         brain.pickGlassFromSpinCoater()
 #         brain.putToEvacuationSpace()
 #         brain.moveTo(brain.coordinate_origin)
@@ -1639,20 +1692,20 @@ class masterController:
 #
 #         #current y : platform_hand 1
 
-#读取玻璃片准确值
+# Read measured glass coordinates.
 # if __name__ == '__main__':
 #     brain = masterController()
 #     brain.init()
-#     brain.moveTo(brain.coordinate_origin)  # 初始化 coordinate_cur
+# Initialize coordinate_cur by moving to the origin.
 #
-#     print("===== 标定玻璃平台四个角点 =====")
-#     print("命令说明：")
-#     print("  p            -> 打印当前位置 (X, Y, ZH, ZM)")
-#     print("  m x y        -> 移动滑轨到 (x, y) 百分比位置")
-#     print("  zh 值        -> 设置手爪Z高度 (例如 zh 60)")
-#     print("  zm 值        -> 设置注射泵Z高度 (例如 zm 20)")
-#     print("  s 名称       -> 保存当前坐标为指定的变量名 (例如 s coordinate_glass_first)")
-#     print("  q            -> 退出")
+# Historical console heading: calibrate the four tray corners.
+# Historical console command help.
+# Command p prints X, Y, gripper Z, and pipette Z.
+# Command m x y moves the stage to percentage coordinates.
+# Command zh sets the gripper Z height, for example zh 60.
+# Command zm sets the pipette Z height, for example zm 20.
+# Command s saves the current pose under a coordinate name.
+# Command q exits.
 #
 #     current_zh = 0.0
 #     current_zm = 0.0
@@ -1664,7 +1717,7 @@ class masterController:
 #         elif cmd == 'p':
 #             x = brain.leg.getCurrentPos_x()
 #             y = brain.leg.getCurrentPos_y()
-#             print(f"当前位置: X={x:.2f}, Y={y:.2f}, ZH={current_zh:.2f}, ZM={current_zm:.2f}")
+# Historical console reports the current X/Y and Z heights.
 #         elif cmd.startswith('m '):
 #             parts = cmd.split()
 #             if len(parts) == 3:
@@ -1674,94 +1727,94 @@ class masterController:
 #                     brain.leg.moveTo(x, y)
 #                     brain.leg.wait_x()
 #                     brain.leg.wait_y()
-#                     print(f"移动到 ({x}, {y})")
+# Historical console reports the requested X/Y move.
 #                 except Exception as e:
-#                     print(f"移动失败: {e}")
+# Historical console reports a movement failure.
 #             else:
-#                 print("格式错误，请输入 'm x y'")
+# Historical console reports invalid m x y syntax.
 #         elif cmd.startswith('zh '):
 #             parts = cmd.split()
 #             if len(parts) == 2:
 #                 try:
 #                     current_zh = float(parts[1])
 #                     brain.moveTo_upAndDown(current_zh, current_zm)
-#                     print(f"手爪Z设置为 {current_zh}")
+# Historical console reports the new gripper Z height.
 #                 except Exception as e:
-#                     print(f"设置Z高度失败: {e}")
+# Historical console reports a gripper Z failure.
 #             else:
-#                 print("格式错误，请输入 'zh 数值'")
+# Historical console reports invalid zh syntax.
 #         elif cmd.startswith('zm '):
 #             parts = cmd.split()
 #             if len(parts) == 2:
 #                 try:
 #                     current_zm = float(parts[1])
 #                     brain.moveTo_upAndDown(current_zh, current_zm)
-#                     print(f"注射泵Z设置为 {current_zm}")
+# Historical console reports the new pipette Z height.
 #                 except Exception as e:
-#                     print(f"设置Z失败: {e}")
+# Historical console reports a pipette Z failure.
 #             else:
-#                 print("格式错误，请输入 'zm 数值'")
+# Historical console reports invalid zm syntax.
 #         elif cmd.startswith('s '):
 #             parts = cmd.split()
 #             if len(parts) != 2:
-#                 print("格式错误，请输入 's 变量名'")
+# Historical console reports invalid coordinate-save syntax.
 #                 continue
 #             name = parts[1]
 #             valid_names = ['coordinate_glass_first', 'coordinate_glass_fifth',
 #                            'coordinate_glass_21st', 'coordinate_glass_25th']
 #             if name not in valid_names:
-#                 print(f"无效名称，请使用: {valid_names}")
+# Historical console lists valid coordinate names.
 #                 continue
 #             x = brain.leg.getCurrentPos_x()
 #             y = brain.leg.getCurrentPos_y()
 #             setattr(brain, name, coordinate(x, y, current_zh, current_zm))
-#             print(f"已保存 {name} = ({x:.2f}, {y:.2f}, {current_zh:.2f}, {current_zm:.2f})")
+# Historical console reports the saved coordinate and its X/Y/Z values.
 #         else:
-#             print("未知命令，请参考提示输入")
+# Historical console reports an unknown command.
 #
 #     brain.close()
-#     print("标定结束，请将以下坐标复制到 config() 中：")
-#     # 确保这些属性存在，否则打印会报错，添加默认值保护
+# Historical console requests copying calibrated coordinates into config().
+# Provide defaults for missing attributes before printing them.
 #     for attr in ['coordinate_glass_first', 'coordinate_glass_fifth',
 #                  'coordinate_glass_21st', 'coordinate_glass_25th']:
 #         val = getattr(brain, attr, None)
 #         if val is None:
-#             print(f"{attr} 未被标定，值为 None")
+# Historical console reports an uncalibrated attribute with value None.
 #         else:
 #             print(f"{attr} = ({val.x:.2f}, {val.y:.2f}, {val.zh:.2f}, {val.zm:.2f})")
 
 # if __name__ == '__main__':
 #     try:
-#         print("===== 启动主程序 =====")
+# Historical console heading: start the main program.
 #         brain = masterController()
-#         brain.init()  # 执行 X、Y 轴回零
+# Initialize the controller by homing X and Y.
 #
-#         print(f"当前偏移量 offset_x = {brain.leg.offset_x:.2f}")
-#         print(f"当前位置 X = {brain.leg.getCurrentPos_x():.2f}")
-#         print(f"当前位置 Y = {brain.leg.getCurrentPos_y():.2f}")
+# Historical console reports offset_x.
+# Historical console reports the current X position.
+# Historical console reports the current Y position.
 #
 #         if abs(brain.leg.offset_x) > 0.1:
-#             print("回零成功，现在测试 moveTo(0,0)...")
-#             brain.moveTo(brain.coordinate_origin)  # 使用 coordinate 对象
-#             print("moveTo(0,0) 完成")
+# Historical console announces an origin movement test after homing.
+# Move to the origin using a coordinate object.
+# Historical console reports completion of the origin move.
 #         else:
-#             print("警告：偏移量为0，回零可能失败")
+# Historical console warns that a zero offset may indicate failed homing.
 #
 #         brain.close()
-#         print("程序正常结束")
+# Historical console reports normal program completion.
 #     except Exception as e:
-#         print(f"发生错误: {e}")
+# Historical console reports an exception.
 #         import traceback
 #
 #         traceback.print_exc()
 #         brain.close()
 
-#检测传感器状态
+# Inspect position sensor states.
 # if __name__ == '__main__':
 #     try:
-#         print("===== 光电传感器测试 =====")
+# Historical console heading: photoelectric sensor test.
 #         brain = masterController()
-#         # 只初始化硬件，不执行回零
+# Initialize hardware without homing.
 #         brain.hand.init()
 #         brain.mouth.init()
 #         brain.leg.init()
@@ -1770,9 +1823,9 @@ class masterController:
 #         brain.moveTo_upAndDown(0, 0)
 #         brain.relax()
 #
-#         print("开始读取传感器状态，每0.5秒更新一次。")
-#         print("请用手或物体遮挡X轴和Y轴的光电传感器，观察状态变化。")
-#         print("按 Ctrl+C 退出。\n")
+# Historical console describes the 0.5 s sensor polling interval.
+# Historical console asks the operator to cover X/Y sensors to test transitions.
+# Historical console documents Ctrl+C to exit.
 #
 #         import time
 #
@@ -1780,14 +1833,14 @@ class masterController:
 #             while True:
 #                 x_val = brain.positionSensor.detection_x()
 #                 y_val = brain.positionSensor.detection_y()
-#                 print(f"X传感器: {x_val}, Y传感器: {y_val}")
+# Historical console reports the X/Y sensor readings.
 #                 time.sleep(0.5)
 #         except KeyboardInterrupt:
-#             print("\n测试结束")
+# Historical console reports the end of the sensor test.
 #
 #         brain.close()
 #     except Exception as e:
-#         print(f"发生错误: {e}")
+# Historical console reports an exception.
 #         import traceback
 #
 #         traceback.print_exc()
@@ -1795,7 +1848,7 @@ class masterController:
 
 # if __name__ == '__main__':
 #     try:
-#         print("===== 滑轨调试模式 (X/Y轴) =====")
+# Historical console heading: X/Y stage debugging.
 #         brain = masterController()
 #         brain.hand.init()
 #         brain.mouth.init()
@@ -1805,21 +1858,21 @@ class masterController:
 #         brain.moveTo_upAndDown(0, 0)
 #         brain.relax()
 #
-#         print("命令说明：")
-#         print("  mx <位置>       -> 移动X轴到指定位置（应用偏移）")
-#         print("  my <位置>       -> 移动Y轴到指定位置（应用偏移）")
-#         print("  rx <位置>       -> 直接移动X轴（不应用偏移）")
-#         print("  ry <位置>       -> 直接移动Y轴（不应用偏移）")
-#         print("  sx              -> 显示X传感器状态")
-#         print("  sy              -> 显示Y传感器状态")
-#         print("  p               -> 显示当前位置和偏移量")
-#         print("  homex           -> 执行X轴回零")
-#         print("  homey           -> 执行Y轴回零")
-#         print("  resetx          -> 将X偏移量置零")
-#         print("  resety          -> 将Y偏移量置零")
-#         print("  setx <值>       -> 手动设置X偏移量")
-#         print("  sety <值>       -> 手动设置Y偏移量")
-#         print("  q               -> 退出")
+# Historical console command help.
+# Command mx moves X using the configured offset.
+# Command my moves Y using the configured offset.
+# Command rx moves X without an offset.
+# Command ry moves Y without an offset.
+# Command sx reports the X sensor.
+# Command sy reports the Y sensor.
+# Command p reports positions and offsets.
+# Command homex homes X.
+# Command homey homes Y.
+# Command resetx clears the X offset.
+# Command resety clears the Y offset.
+# Command setx sets the X offset manually.
+# Command sety sets the Y offset manually.
+# Command q exits.
 #         print()
 #
 #         import time
@@ -1835,30 +1888,30 @@ class masterController:
 #
 #                 elif cmd == 'sx':
 #                     val = brain.positionSensor.detection_x()
-#                     print(f"X传感器: {'触发' if val else '未触发'}")
+# Historical console reports whether the X sensor is triggered.
 #                 elif cmd == 'sy':
 #                     val = brain.positionSensor.detection_y()
-#                     print(f"Y传感器: {'触发' if val else '未触发'}")
+# Historical console reports whether the Y sensor is triggered.
 #
 #                 elif cmd == 'p':
-#                     print(f"X: 位置={brain.leg.getCurrentPos_x():.2f}, offset_x={brain.leg.offset_x:.2f}")
-#                     print(f"Y: 位置={brain.leg.getCurrentPos_y():.2f}, offset_y={brain.leg.offset_y:.2f}")
+# Historical console reports X position and offset.
+# Historical console reports Y position and offset.
 #
 #                 elif cmd == 'homex':
 #                     brain._homing_x()
-#                     print("X轴回零完成")
+# Historical console reports completion of X homing.
 #                 elif cmd == 'homey':
 #                     brain._homing_y()
-#                     print("Y轴回零完成")
+# Historical console reports completion of Y homing.
 #
 #                 elif cmd == 'resetx':
 #                     brain.leg.offset_x = 0
 #                     brain.leg.save_offset()
-#                     print("X偏移量已重置为0")
+# Historical console reports that the X offset was reset.
 #                 elif cmd == 'resety':
 #                     brain.leg.offset_y = 0
 #                     brain.leg.save_offset()
-#                     print("Y偏移量已重置为0")
+# Historical console reports that the Y offset was reset.
 #
 #                 elif cmd.startswith('setx '):
 #                     parts = cmd.split()
@@ -1867,11 +1920,11 @@ class masterController:
 #                             v = float(parts[1])
 #                             brain.leg.offset_x = v
 #                             brain.leg.save_offset()
-#                             print(f"X偏移量已设置为 {v:.2f}")
+# Historical console reports the assigned X offset.
 #                         except:
-#                             print("请输入有效数值")
+# Historical console requests a valid numeric value.
 #                     else:
-#                         print("格式错误，请输入 'setx 数值'")
+# Historical console reports invalid setx syntax.
 #                 elif cmd.startswith('sety '):
 #                     parts = cmd.split()
 #                     if len(parts) == 2:
@@ -1879,38 +1932,38 @@ class masterController:
 #                             v = float(parts[1])
 #                             brain.leg.offset_y = v
 #                             brain.leg.save_offset()
-#                             print(f"Y偏移量已设置为 {v:.2f}")
+# Historical console reports the assigned Y offset.
 #                         except:
-#                             print("请输入有效数值")
+# Historical console requests a valid numeric value.
 #                     else:
-#                         print("格式错误，请输入 'sety 数值'")
+# Historical console reports invalid sety syntax.
 #
 #                 elif cmd.startswith('mx '):
 #                     parts = cmd.split()
 #                     if len(parts) == 2:
 #                         try:
 #                             target = float(parts[1])
-#                             print(f"正在移动X到 {target:.2f} ...")
+# Historical console reports the target X position.
 #                             brain.leg.moveTo_x(target, ignore_limit=True)
 #                             brain.leg.wait_x()
-#                             print("移动完成")
+# Historical console reports completion of movement.
 #                         except Exception as e:
-#                             print(f"移动失败: {e}")
+# Historical console reports a movement failure.
 #                     else:
-#                         print("格式错误，请输入 'mx 数值'")
+# Historical console reports invalid mx syntax.
 #                 elif cmd.startswith('my '):
 #                     parts = cmd.split()
 #                     if len(parts) == 2:
 #                         try:
 #                             target = float(parts[1])
-#                             print(f"正在移动Y到 {target:.2f} ...")
+# Historical console reports the target Y position.
 #                             brain.leg.moveTo_y(target, ignore_limit=True)
 #                             brain.leg.wait_y()
-#                             print("移动完成")
+# Historical console reports completion of movement.
 #                         except Exception as e:
-#                             print(f"移动失败: {e}")
+# Historical console reports a movement failure.
 #                     else:
-#                         print("格式错误，请输入 'my 数值'")
+# Historical console reports invalid my syntax.
 #
 #                 elif cmd.startswith('rx '):
 #                     parts = cmd.split()
@@ -1922,11 +1975,11 @@ class masterController:
 #                             brain.leg.moveTo_x(target, ignore_limit=True)
 #                             brain.leg.wait_x()
 #                             brain.leg.offset_x = old
-#                             print("移动完成")
+# Historical console reports completion of movement.
 #                         except Exception as e:
-#                             print(f"移动失败: {e}")
+# Historical console reports a movement failure.
 #                     else:
-#                         print("格式错误，请输入 'rx 数值'")
+# Historical console reports invalid rx syntax.
 #                 elif cmd.startswith('ry '):
 #                     parts = cmd.split()
 #                     if len(parts) == 2:
@@ -1937,64 +1990,64 @@ class masterController:
 #                             brain.leg.moveTo_y(target, ignore_limit=True)
 #                             brain.leg.wait_y()
 #                             brain.leg.offset_y = old
-#                             print("移动完成")
+# Historical console reports completion of movement.
 #                         except Exception as e:
-#                             print(f"移动失败: {e}")
+# Historical console reports a movement failure.
 #                     else:
-#                         print("格式错误，请输入 'ry 数值'")
+# Historical console reports invalid ry syntax.
 #
 #                 else:
-#                     print("未知命令")
+# Historical console reports an unknown command.
 #             except KeyboardInterrupt:
-#                 print("\n用户中断")
+# Historical console reports a user interruption.
 #                 break
 #
 #         brain.close()
-#         print("调试结束")
+# Historical console reports the end of debugging.
 #     except Exception as e:
-#         print(f"发生错误: {e}")
+# Historical console reports an exception.
 #         import traceback
 #
 #         traceback.print_exc()
 #         brain.close()
 
 # if __name__ == '__main__':
-#     # ---------- 1. 初始化 ----------
+# 1. Initialize the calibration session.
 #     brain = masterController()
 #     brain.init()
-#     brain.moveTo(brain.coordinate_origin)  # 初始化 coordinate_cur
+# Initialize coordinate_cur by moving to the origin.
 #
-#     # ---------- 2. 定义可保存的其他坐标变量名 ----------
-#     # 玻璃位置使用 sg 命令单独保存，不在此列表
+# 2. Define names for other coordinates that can be saved.
+# Save glass coordinates separately with sg, outside this name list.
 #     valid_names = [
 #         'coordinate_bottle_one_hand', 'coordinate_bottle_two_hand', 'coordinate_bottle_three_hand',
 #         'coordinate_bottle_one_mouth', 'coordinate_bottle_two_mouth', 'coordinate_bottle_three_mouth'
 #     ]
 #
-#     # 当前Z高度（用户通过 zh/zm 命令设置）
+# Track the Z heights set by the zh and zm commands.
 #     current_zh = 0.0
 #     current_zm = 0.0
 #
-#     # ---------- 3. 显示帮助信息 ----------
-#     print("===== 标定玻璃平台（4×6，共24片）=====")
-#     print("命令说明：")
-#     print("  p            -> 打印当前位置 (X, Y, ZH, ZM)")
-#     print("  m x y        -> 移动滑轨到 (x, y) 百分比位置")
-#     print("  zh 值        -> 设置手爪Z高度 (例如 zh 60)")
-#     print("  zm 值        -> 设置注射泵Z高度 (例如 zm 20)")
-#     print("  pick         -> 机械手夹紧（测试）")
-#     print("  place        -> 机械手松开（测试）")
-#     print("  sg 编号      -> 保存当前坐标到对应编号的玻璃 (编号 1~24)")
-#     print("  s 名称       -> 保存当前坐标到其他变量 (如 coordinate_bottle_one_hand)")
-#     # ============ 新增拧瓶盖命令说明 ============
-#     print("  open1/close1 -> 打开/关闭1号瓶（使用已保存的坐标）")
-#     print("  open2/close2 -> 打开/关闭2号瓶")
-#     print("  open3/close3 -> 打开/关闭3号瓶")
+# 3. Display command help.
+# Historical console heading: calibrate a 4-by-6 tray with 24 glasses.
+# Historical console command help.
+# Command p prints X, Y, gripper Z, and pipette Z.
+# Command m x y moves the stage to percentage coordinates.
+# Command zh sets the gripper Z height, for example zh 60.
+# Command zm sets the pipette Z height, for example zm 20.
+# Command pick tests gripper closure.
+# Command place tests gripper release.
+# Command sg saves the current pose for glass number 1..24.
+# Command s saves another coordinate, such as a bottle-gripper pose.
+# Document bottle cap commands.
+# Commands open1/close1 use saved bottle 1 coordinates.
+# Commands open2/close2 operate bottle 2.
+# Commands open3/close3 operate bottle 3.
 #     # ========================================
-#     print("  q            -> 退出并显示所有已标定的坐标")
+# Command q exits and prints calibrated coordinates.
 #     print()
 #
-#     # ---------- 4. 主循环 ----------
+# 4. Run the command loop.
 #     while True:
 #         try:
 #             cmd = input("> ").strip()
@@ -2003,54 +2056,54 @@ class masterController:
 #         if not cmd:
 #             continue
 #
-#         # ---- 退出 ----
+# Handle exit.
 #         if cmd == 'q':
 #             break
 #
-#         # ---- 打印当前位置 ----
+# Print the current pose.
 #         elif cmd == 'p':
 #             x = brain.leg.getCurrentPos_x()
 #             y = brain.leg.getCurrentPos_y()
-#             print(f"当前位置: X={x:.2f}, Y={y:.2f}, ZH={current_zh:.2f}, ZM={current_zm:.2f}")
+# Historical console reports the current X/Y and Z heights.
 #
-#         # ---- 夹紧/释放测试 ----
+# Test clamping and release.
 #         elif cmd == 'pick':
-#             print("夹持测试...")
+# Historical console announces a clamping test.
 #             brain.clamp_with_detection()
-#             print("夹持完成")
+# Historical console reports completion of clamping.
 #         elif cmd == 'place':
-#             print("释放测试...")
+# Historical console announces a release test.
 #             brain.relax()
-#             print("释放完成")
+# Historical console reports completion of release.
 #
-#         # ============ 新增拧瓶盖命令 ============
+# Handle bottle cap commands.
 #         elif cmd == 'open1':
-#             print("打开1号瓶...")
+# Historical console announces opening bottle 1.
 #             brain.openBottleOne()
-#             print("1号瓶已打开")
+# Historical console reports that bottle 1 is open.
 #         elif cmd == 'close1':
-#             print("关闭1号瓶...")
+# Historical console announces closing bottle 1.
 #             brain.closeBottleOne()
-#             print("1号瓶已关闭")
+# Historical console reports that bottle 1 is closed.
 #         elif cmd == 'open2':
-#             print("打开2号瓶...")
+# Historical console announces opening bottle 2.
 #             brain.openBottleTwo()
-#             print("2号瓶已打开")
+# Historical console reports that bottle 2 is open.
 #         elif cmd == 'close2':
-#             print("关闭2号瓶...")
+# Historical console announces closing bottle 2.
 #             brain.closeBottleTwo()
-#             print("2号瓶已关闭")
+# Historical console reports that bottle 2 is closed.
 #         elif cmd == 'open3':
-#             print("打开3号瓶...")
+# Historical console announces opening bottle 3.
 #             brain.openBottleThree()
-#             print("3号瓶已打开")
+# Historical console reports that bottle 3 is open.
 #         elif cmd == 'close3':
-#             print("关闭3号瓶...")
+# Historical console announces closing bottle 3.
 #             brain.closeBottleThree()
-#             print("3号瓶已关闭")
+# Historical console reports that bottle 3 is closed.
 #         # ======================================
 #
-#         # ---- 移动滑轨 ----
+# Move the stage.
 #         elif cmd.startswith('m '):
 #             parts = cmd.split()
 #             if len(parts) == 3:
@@ -2060,116 +2113,114 @@ class masterController:
 #                     brain.leg.moveTo(x, y)
 #                     brain.leg.wait_x()
 #                     brain.leg.wait_y()
-#                     print(f"移动到 ({x}, {y})")
+# Historical console reports the requested X/Y move.
 #                 except Exception as e:
-#                     print(f"移动失败: {e}")
+# Historical console reports a movement failure.
 #             else:
-#                 print("格式错误，请输入 'm x y'")
+# Historical console reports invalid m x y syntax.
 #
-#         # ---- 设置手爪Z高度 ----
+# Set the gripper Z height.
 #         elif cmd.startswith('zh '):
 #             parts = cmd.split()
 #             if len(parts) == 2:
 #                 try:
 #                     current_zh = float(parts[1])
 #                     brain.moveTo_upAndDown(current_zh, current_zm)
-#                     print(f"手爪Z设置为 {current_zh}")
+# Historical console reports the new gripper Z height.
 #                 except Exception as e:
-#                     print(f"设置Z高度失败: {e}")
+# Historical console reports a gripper Z failure.
 #             else:
-#                 print("格式错误，请输入 'zh 数值'")
+# Historical console reports invalid zh syntax.
 #
-#         # ---- 设置注射泵Z高度 ----
+# Set the pipette Z height.
 #         elif cmd.startswith('zm '):
 #             parts = cmd.split()
 #             if len(parts) == 2:
 #                 try:
 #                     current_zm = float(parts[1])
 #                     brain.moveTo_upAndDown(current_zh, current_zm)
-#                     print(f"注射泵Z设置为 {current_zm}")
+# Historical console reports the new pipette Z height.
 #                 except Exception as e:
-#                     print(f"设置Z失败: {e}")
+# Historical console reports a pipette Z failure.
 #             else:
-#                 print("格式错误，请输入 'zm 数值'")
+# Historical console reports invalid zm syntax.
 #
-#         # ---- 保存玻璃位置 ----
+# Save a glass pose.
 #         elif cmd.startswith('sg '):
 #             parts = cmd.split()
 #             if len(parts) != 2:
-#                 print("格式错误，请输入 'sg 编号'")
+# Historical console reports invalid sg syntax.
 #                 continue
 #             try:
-#                 idx = int(parts[1]) - 1   # 用户输入 1~24，转为列表索引 0~23
+# Convert operator numbers 1..24 to indices 0..23.
 #                 if idx < 0 or idx >= 24:
-#                     print("编号必须在 1~24 之间")
+# Historical console restricts glass numbers to 1..24.
 #                     continue
 #             except ValueError:
-#                 print("请输入有效数字")
+# Historical console requests a valid numeric value.
 #                 continue
 #
-#             # 读取当前位置
+# Read the current pose.
 #             x = brain.leg.getCurrentPos_x()
 #             y = brain.leg.getCurrentPos_y()
-#             # 保存到 glass_coordinates 列表
+# Store the pose in glass_coordinates.
 #             brain.glass_coordinates[idx] = coordinate(x, y, current_zh, current_zm)
-#             print(f"已保存第 {idx+1} 片玻璃坐标: X={x:.2f}, Y={y:.2f}, ZH={current_zh:.2f}, ZM={current_zm:.2f}")
+# Historical console reports the saved glass number and X/Y/Z values.
 #
-#         # ---- 保存其他坐标（瓶盖等） ----
+# Save other poses, such as bottle cap coordinates.
 #         elif cmd.startswith('s '):
 #             parts = cmd.split()
 #             if len(parts) != 2:
-#                 print("格式错误，请输入 's 变量名'")
+# Historical console reports invalid coordinate-save syntax.
 #                 continue
 #             name = parts[1]
 #             if name not in valid_names:
-#                 print(f"无效名称，可用名称：{valid_names}")
+# Historical console lists valid coordinate names.
 #                 continue
 #             x = brain.leg.getCurrentPos_x()
 #             y = brain.leg.getCurrentPos_y()
 #             setattr(brain, name, coordinate(x, y, current_zh, current_zm))
-#             print(f"已保存 {name} = ({x:.2f}, {y:.2f}, {current_zh:.2f}, {current_zm:.2f})")
+# Historical console reports the saved coordinate and its X/Y/Z values.
 #
-#         # ---- 未知命令 ----
+# Handle unknown commands.
 #         else:
-#             print("未知命令，请参考提示输入")
+# Historical console reports an unknown command.
 #
-#     # ---------- 5. 退出前打印所有标定结果 ----------
-#     print("\n===== 标定结果 =====")
+# 5. Print all calibration results before exiting.
+# Historical console heading: calibration results.
 #
-#     # 打印玻璃坐标
-#     print("\n--- 玻璃位置（24片） ---")
+# Print glass coordinates.
+# Historical console heading: 24 glass positions.
 #     for i, coord in enumerate(brain.glass_coordinates):
 #         if coord is not None:
-#             print(f"第 {i+1:2d} 片: X={coord.x:8.2f}, Y={coord.y:8.2f}, ZH={coord.zh:6.2f}, ZM={coord.zm:6.2f}")
+# Historical console prints a calibrated glass pose.
 #         else:
-#             print(f"第 {i+1:2d} 片: 未标定")
+# Historical console reports an uncalibrated glass.
 #
-#     # 打印其他坐标
-#     print("\n--- 其他坐标 ---")
+# Print other coordinates.
+# Historical console heading: other coordinates.
 #     for name in valid_names:
 #         val = getattr(brain, name, None)
 #         if val is not None:
 #             print(f"{name}: X={val.x:.2f}, Y={val.y:.2f}, ZH={val.zh:.2f}, ZM={val.zm:.2f}")
 #         else:
-#             print(f"{name}: 未标定")
+# Historical console reports an uncalibrated named pose.
 #
-#     print("\n标定结束，请将玻璃坐标复制到 config() 的 glass_coordinates 列表中。")
+# Historical console requests copying the poses into config().glass_coordinates.
 #     brain.close()
 
 def verify_coordinates():
-    """
-    专门用于验证玻璃坐标的交互式工具
-    """
+    """Interactively verify the measured glass coordinates."""
     print("===== 玻璃坐标验证工具 =====")
     brain = masterController()
     brain.init()
     brain.moveTo(brain.coordinate_origin)
 
-    # 当前手爪/注射泵高度（用于微调）
+    # Track gripper and pipette heights for fine adjustment.
     current_zh = 0.0
     current_zm = 0.0
 
-    # 记录已验证的玻璃编号
+    # Record verified glass numbers.
     verified_list = []
 
     print("\n命令说明：")
@@ -2191,11 +2242,11 @@ def verify_coordinates():
         if not cmd:
             continue
 
-        # ---- 退出 ----
+        # Handle exit.
         if cmd == 'q':
             break
 
-        # ---- 移动到指定玻璃 ----
+        # Move to the selected glass.
         elif cmd.startswith('g '):
             parts = cmd.split()
             if len(parts) != 2:
@@ -2209,14 +2260,14 @@ def verify_coordinates():
                 coord = brain.glass_coordinates[num - 1]
                 if coord is None:
                     print(f"警告：第 {num} 片玻璃未标定，坐标为 (0,0,0)")
-                    # 可以跳过一个未标定的，但为了演示，我们仍尝试移动
-                    # 但最好提示未标定
+                    # An uncalibrated glass could be skipped, but this demonstration attempts the move.
+                    # Prefer warning the operator about missing calibration.
                     continue
-                # 移动到存储的坐标（包含X,Y,ZH,ZM）
+                # Move to the stored X/Y/gripper-Z/pipette-Z pose.
                 brain.moveTo(coord)
                 print(f"已移动到第 {num} 片玻璃")
                 print(f"  计算坐标: X={coord.x:.2f}, Y={coord.y:.2f}, ZH={coord.zh:.2f}, ZM={coord.zm:.2f}")
-                # 更新当前Z变量，以便后续微调显示
+                # Update tracked Z values for later fine-adjustment display.
                 current_zh = coord.zh
                 current_zm = coord.zm
                 if num not in verified_list:
@@ -2224,13 +2275,13 @@ def verify_coordinates():
             except ValueError:
                 print("请输入有效数字")
 
-        # ---- 打印当前位置 ----
+        # Print the current pose.
         elif cmd == 'p':
             x = brain.leg.getCurrentPos_x()
             y = brain.leg.getCurrentPos_y()
             print(f"当前位置: X={x:.2f}, Y={y:.2f}, ZH={current_zh:.2f}, ZM={current_zm:.2f}")
 
-        # ---- 夹紧/释放 ----
+        # Clamp or release the gripper.
         elif cmd == 'pick':
             print("夹持测试...")
             brain.clamp_with_detection()
@@ -2240,14 +2291,14 @@ def verify_coordinates():
             brain.relax()
             print("释放完成")
 
-        # ---- 移动滑轨（手动微调） ----
+        # Move the stage for manual fine adjustment.
         elif cmd.startswith('m '):
             parts = cmd.split()
             if len(parts) == 3:
                 try:
                     x = float(parts[1])
                     y = float(parts[2])
-                    # 先抬升Z轴到安全高度，再移动XY
+                    # Raise Z to a safe height before moving X/Y.
                     brain.moveTo_upAndDown(Z_SAFE_HAND, Z_SAFE_MOUTH)
                     brain.leg.moveTo(x, y)
                     brain.leg.wait_x()
@@ -2258,7 +2309,7 @@ def verify_coordinates():
             else:
                 print("格式错误，请输入 'm x y'")
 
-        # ---- 设置手爪Z高度 ----
+        # Set the gripper Z height.
         elif cmd.startswith('zh '):
             parts = cmd.split()
             if len(parts) == 2:
@@ -2271,7 +2322,7 @@ def verify_coordinates():
             else:
                 print("格式错误，请输入 'zh 数值'")
 
-        # ---- 设置注射泵Z高度 ----
+        # Set the pipette Z height.
         elif cmd.startswith('zm '):
             parts = cmd.split()
             if len(parts) == 2:
@@ -2284,11 +2335,11 @@ def verify_coordinates():
             else:
                 print("格式错误，请输入 'zm 数值'")
 
-        # ---- 未知命令 ----
+        # Handle unknown commands.
         else:
             print("未知命令，请参考提示输入")
 
-    # ---- 退出时打印已验证的玻璃编号 ----
+    # Print verified glass numbers on exit.
     print("\n===== 已验证的玻璃编号 =====")
     if verified_list:
         print(f"共 {len(verified_list)} 片：{sorted(verified_list)}")
@@ -2302,15 +2353,15 @@ def verify_coordinates():
 # if __name__ == '__main__':
 #     verify_coordinates()
 
-#测试手爪拧瓶盖
+# Test bottle cap rotation with the gripper.
 # if __name__ == '__main__':
 #     try:
 #         brain = masterController()
-#         brain.init()  # 初始化：回零、抬升安全高度等
+# Initialize by homing and raising Z to safe heights.
 #
-#         print("\n========== 手动控制模式 ==========")
-#         print("输入 help 查看所有命令")
-#         print("提示：移动滑轨前会自动将手爪和移液器抬到安全高度")
+# Historical console heading: manual control mode.
+# Historical console documents the help command.
+# Historical console explains automatic Z raising before stage movement.
 #         print("==================================\n")
 #
 #         while True:
@@ -2321,65 +2372,65 @@ def verify_coordinates():
 #
 #             if op == 'help':
 #                 print("""
-# 命令列表：
-#   goto X Y           移动滑轨到坐标 (X, Y)，移动前自动抬升Z轴到安全高度
-#   zh Z               手爪Z轴移动到 Z（例：zh 80）
-#   zm Z               移液器Z轴移动到 Z（例：zm 18）
-#   clamp              夹紧手爪（夹到预设位置）
-#   relax              松开手爪（松开到较松位置）
-#   spiral DEG         手爪旋转 DEG 度（正数拧紧，负数拧松，例：spiral -720）
-#   open N             自动打开第 N 个瓶子（N=1,2,3），包含移动、夹紧、旋转
-#   close N            自动关闭第 N 个瓶子（N=1,2,3）
-#   status             显示当前滑轨位置和Z轴高度
-#   quit               退出程序
+# Available commands.
+# goto X Y raises Z first and then moves the stage.
+# zh Z sets the gripper Z position, for example zh 80.
+# zm Z sets the pipette Z position, for example zm 18.
+# clamp closes the gripper to its preset position.
+# relax opens the gripper to its release position.
+# spiral DEG rotates the gripper; positive tightens and negative loosens.
+# open N opens bottle 1, 2, or 3 using movement, clamping, and rotation.
+# close N closes bottle 1, 2, or 3.
+# status reports stage positions and Z heights.
+# quit exits.
 # """)
 #
 #             elif op == 'goto':
 #                 if len(cmd) < 3:
-#                     print("用法：goto X Y")
+# Historical console reports goto X Y usage.
 #                     continue
 #                 x, y = float(cmd[1]), float(cmd[2])
-#                 # 先抬升到安全高度
+# Raise to the safe height first.
 #                 brain.moveTo_upAndDown(Z_SAFE_HAND, Z_SAFE_MOUTH)
-#                 # 移动滑轨
+# Move the stage.
 #                 brain.move_leg_to(x, y)
-#                 print(f"滑轨已移动到 X={x:.2f}, Y={y:.2f}")
+# Historical console reports the new X/Y positions.
 #
 #             elif op == 'zh':
 #                 if len(cmd) < 2:
-#                     print("用法：zh Z")
+# Historical console reports zh Z usage.
 #                     continue
 #                 z = float(cmd[1])
 #                 brain.moveTo_upAndDown(z, brain.coordinate_cur.zm)
-#                 print(f"手爪Z已设置为 {z}")
+# Historical console reports the assigned gripper Z height.
 #
 #             elif op == 'zm':
 #                 if len(cmd) < 2:
-#                     print("用法：zm Z")
+# Historical console reports zm Z usage.
 #                     continue
 #                 z = float(cmd[1])
 #                 brain.moveTo_upAndDown(brain.coordinate_cur.zh, z)
-#                 print(f"移液器Z已设置为 {z}")
+# Historical console reports the assigned pipette Z height.
 #
 #             elif op == 'clamp':
 #                 brain.clamp()
-#                 print("手爪已夹紧（夹到预设位置）")
+# Historical console reports closure to the preset gripper position.
 #
 #             elif op == 'relax':
 #                 brain.relax()
-#                 print("手爪已松开")
+# Historical console reports gripper release.
 #
 #             elif op == 'spiral':
 #                 if len(cmd) < 2:
-#                     print("用法：spiral DEG")
+# Historical console reports spiral DEG usage.
 #                     continue
 #                 deg = int(cmd[1])
 #                 brain.hand.spiral(deg)
-#                 print(f"手爪旋转 {deg} 度")
+# Historical console reports the gripper rotation angle.
 #
 #             elif op == 'open':
 #                 if len(cmd) < 2:
-#                     print("用法：open N（N=1,2,3）")
+# Historical console reports open N usage with N=1,2,3.
 #                     continue
 #                 num = int(cmd[1])
 #                 if num == 1:
@@ -2389,13 +2440,13 @@ def verify_coordinates():
 #                 elif num == 3:
 #                     brain.openBottleThree()
 #                 else:
-#                     print("瓶子编号只能是 1、2、3")
+# Historical console restricts bottle numbers to 1, 2, or 3.
 #                     continue
-#                 print(f"已执行打开 {num} 号瓶")
+# Historical console reports the opened bottle number.
 #
 #             elif op == 'close':
 #                 if len(cmd) < 2:
-#                     print("用法：close N（N=1,2,3）")
+# Historical console reports close N usage with N=1,2,3.
 #                     continue
 #                 num = int(cmd[1])
 #                 if num == 1:
@@ -2405,25 +2456,25 @@ def verify_coordinates():
 #                 elif num == 3:
 #                     brain.closeBottleThree()
 #                 else:
-#                     print("瓶子编号只能是 1、2、3")
+# Historical console restricts bottle numbers to 1, 2, or 3.
 #                     continue
-#                 print(f"已执行关闭 {num} 号瓶")
+# Historical console reports the closed bottle number.
 #
 #             elif op == 'status':
 #                 x = brain.leg.getCurrentPos_x()
 #                 y = brain.leg.getCurrentPos_y()
 #                 zh = brain.coordinate_cur.zh if brain.coordinate_cur else 0
 #                 zm = brain.coordinate_cur.zm if brain.coordinate_cur else 0
-#                 print(f"当前状态：滑轨 X={x:.2f}, Y={y:.2f}, 手爪Z={zh}, 移液器Z={zm}")
+# Historical console reports stage positions and gripper/pipette Z heights.
 #
 #             elif op == 'quit':
 #                 break
 #
 #             else:
-#                 print("未知命令，输入 help 查看帮助")
+# Historical console requests help for an unknown command.
 #
 #     except Exception as e:
-#         print(f"程序异常：{e}")
+# Historical console reports an exception.
 #         try:
 #             brain.moveTo(brain.coordinate_origin)
 #             brain.close()
@@ -2431,81 +2482,81 @@ def verify_coordinates():
 #             pass
 #         raise e
 #     finally:
-#         # 退出前回到原点并关闭设备
+# Return to the origin and close devices before exiting.
 #         try:
 #             brain.moveTo(brain.coordinate_origin)
 #             brain.close()
-#             print("设备已关闭，程序结束。")
+# Historical console reports closed devices and program completion.
 #         except:
 #             pass
 
-#测试移液头
+# Test pipette tips.
 # if __name__ == '__main__':
 #     try:
 #         brain = masterController()
-#         brain.init()  # 执行初始化（回零、抬升等）
+# Initialize by homing and raising the axes.
 #
-#         # 先抬升到最高安全位置，确保安全
+# Raise to the highest safe pose before testing.
 #         brain.moveTo_upAndDown(Z_SAFE_HAND, Z_SAFE_MOUTH)
 #
-#         print("\n========== 吸头取放测试程序 ==========")
-#         print(f"吸头总数：{len(brain.lips_coordinates)} 个（编号 1~{len(brain.lips_coordinates)}）")
-#         print("命令说明：")
-#         print("  输入数字编号（如 1） → 滑轨移动到该吸头位置，Z轴抬升到安全高度")
-#         print("  输入 'pick'        → 执行取吸头（下压安装）")
-#         print("  输入 'drop'        → 执行放回吸头（下压、弹出、抬升）")
-#         print("  输入 'quit'        → 退出程序")
-#         print("提示：取头前请确保移液器上没有吸头；放回前请确保已取了吸头。")
+# Historical console heading: tip pickup and return test.
+# Historical console reports the total number and range of tips.
+# Historical console command help.
+# Entering a tip number aligns X/Y above the tip at safe Z heights.
+# Command pick descends to attach the tip.
+# Command drop descends, ejects the tip, and raises Z.
+# Command quit exits.
+# Ensure no tip is attached before pickup and a tip is attached before return.
 #         print("=====================================\n")
 #
-#         current_num = None  # 记录当前选中的吸头编号
+# Remember the currently selected tip number.
 #
 #         while True:
-#             cmd = input("请输入命令: ").strip()
+# Historical input prompt requests a command.
 #
 #             if cmd == 'quit':
 #                 break
 #
 #             elif cmd == 'pick':
 #                 if current_num is None:
-#                     print("错误：请先输入一个吸头编号！")
+# Historical console requests a tip number before an action.
 #                     continue
-#                 print(f"正在取吸头 {current_num} ...")
-#                 brain.pickLip(current_num)  # 该函数会移动到位并下压安装
-#                 print("取吸头完成！请检查吸头是否安装牢固。")
+# Historical console announces tip pickup.
+# pickLip aligns the pipette and descends to attach the tip.
+# Historical console requests checking that the tip is firmly attached.
 #
 #             elif cmd == 'drop':
 #                 if current_num is None:
-#                     print("错误：请先输入一个吸头编号！")
+# Historical console requests a tip number before an action.
 #                     continue
-#                 print(f"正在放回吸头 {current_num} ...")
-#                 brain.relinquishLip(current_num)  # 该函数会下压、弹出、然后抬升
-#                 print("放回吸头完成！移液器已抬升至安全高度。")
+# Historical console announces tip return.
+# relinquishLip descends, ejects the tip, and raises Z.
+# Historical console reports return completion and safe pipette height.
 #
 #             else:
-#                 # 尝试解析为数字编号
+# Try parsing the input as a tip number.
 #                 try:
 #                     num = int(cmd)
 #                     if num < 1 or num > len(brain.lips_coordinates):
-#                         print(f"编号超出范围（1~{len(brain.lips_coordinates)}），请重新输入")
+# Historical console reports a tip number outside the valid range.
 #                         continue
 #                     current_num = num
-#                     # 获取吸头坐标
+# Look up the tip coordinates.
 #                     co = brain.getLipsCoordinate(num)
 #                     if co is None:
 #                         continue
-#                     # 移动到该位置，但将Z轴（zh和zm）设为安全高度，避免压到吸头
-#                     safe_zh = Z_SAFE_HAND      # 手爪安全高度（1.0）
-#                     safe_zm = Z_SAFE_MOUTH     # 移液器安全高度（0.0）
+# Align X/Y at safe gripper and pipette Z heights to avoid pressing the tip.
+# Historical safe_zh = Z_SAFE_HAND, corresponding to 1.0.
+# Historical safe_zm = Z_SAFE_MOUTH, corresponding to 0.0.
 #                     brain.moveTo(coordinate(co.x, co.y, safe_zh, safe_zm))
-#                     print(f"已移动到吸头 {num} 的上方（XY已对准，Z轴在安全高度）。")
-#                     print("请观察位置是否准确，然后输入 'pick' 取头 或 'drop' 放回头。")
+# Historical console reports alignment above the selected tip.
+# Historical console requests checking alignment before pick or drop.
 #                 except ValueError:
-#                     print("无效命令，请输入数字编号、'pick'、'drop' 或 'quit'")
+# Historical console lists numeric, pick, drop, and quit inputs.
 #
 #     except Exception as e:
-#         print(f"程序异常：{e}")
-#         # 发生异常时，尝试回到原点并关闭设备
+# Historical console reports an exception.
+# On exception, attempt to return to the origin and close devices.
 #         try:
 #             brain.moveTo(brain.coordinate_origin)
 #             brain.close()
@@ -2513,11 +2564,11 @@ def verify_coordinates():
 #             pass
 #         raise e
 #     finally:
-#         # 正常退出时也执行清理
+# Clean up on normal exit as well.
 #         try:
 #             brain.moveTo(brain.coordinate_origin)
 #             brain.close()
-#             print("设备已关闭，测试结束。")
+# Historical console reports closed devices and test completion.
 #         except:
 #             pass
 
@@ -2526,24 +2577,24 @@ def verify_coordinates():
 #
 #
 # def explore_z_limits():
-#     print("===== 探索Z轴物理限位 =====")
-#     print("命令：")
-#     print("  +步长   -> 向上移动指定步长（如 +5）")
-#     print("  -步长   -> 向下移动指定步长（如 -5）")
-#     print("  pos     -> 显示当前位置（虚拟值）")
-#     print("  set 值  -> 直接设置位置（可用于跳转）")
-#     print("  q       -> 退出并记录限位")
+# Historical console heading: explore physical Z limits.
+# Historical console command help.
+# Command +step moves upward by a specified increment.
+# Command -step moves downward by a specified increment.
+# Command pos shows the virtual position.
+# Command set assigns a target position directly.
+# Command q exits and records the observed limits.
 #     print()
 #
-#     # 创建控制器，超时设为60秒（避免限位时超时）
+# Create the controller with a 60 s timeout for limit exploration.
 #     h = hand.controller("COM7", timeout=60)
 #
-#     # 当前虚拟位置（初始为0，但实际物理位置未知）
+# Virtual position starts at 0; the physical position is initially unknown.
 #     current_pos = 0.0
 #
-#     # 记录限位
-#     upper_limit = None  # 上限位置
-#     lower_limit = None  # 下限位置
+# Record observed travel limits.
+# Historical upper_limit starts as None.
+# Historical lower_limit starts as None.
 #
 #     while True:
 #         try:
@@ -2551,69 +2602,69 @@ def verify_coordinates():
 #             if cmd.lower() == 'q':
 #                 break
 #             elif cmd == 'pos':
-#                 print(f"当前位置: {current_pos:.1f}%")
+# Historical console reports the current percentage position.
 #             elif cmd.startswith('set '):
 #                 parts = cmd.split()
 #                 if len(parts) == 2:
 #                     new_pos = float(parts[1])
 #                     current_pos = new_pos
-#                     print(f"跳转到 {current_pos:.1f}%...")
+# Historical console reports the requested target position.
 #                     h.moveTo(current_pos)
 #                     time.sleep(2)
-#                     print("移动完成")
+# Historical console reports completion of movement.
 #                 else:
-#                     print("格式错误，请输入 'set 数值'")
+# Historical console reports invalid set syntax.
 #             elif cmd.startswith('+'):
 #                 step = float(cmd[1:]) if len(cmd) > 1 else 1.0
 #                 current_pos += step
-#                 print(f"向上移动 {step}，目标 {current_pos:.1f}%...")
+# Historical console reports the upward step and target.
 #                 try:
 #                     h.moveTo(current_pos)
 #                     time.sleep(2)
-#                     print("移动成功")
+# Historical console reports successful movement.
 #                 except Exception as e:
-#                     print(f"移动失败（可能到达限位）: {e}")
-#                     # 记录上限
+# Historical console reports failure, possibly caused by reaching a limit.
+# Record the upper limit.
 #                     upper_limit = current_pos - step
-#                     print(f"推测上限在 {upper_limit:.1f} 附近")
+# Historical console reports the estimated upper limit.
 #             elif cmd.startswith('-'):
 #                 step = float(cmd[1:]) if len(cmd) > 1 else 1.0
 #                 current_pos -= step
-#                 print(f"向下移动 {step}，目标 {current_pos:.1f}%...")
+# Historical console reports the downward step and target.
 #                 try:
 #                     h.moveTo(current_pos)
 #                     time.sleep(2)
-#                     print("移动成功")
+# Historical console reports successful movement.
 #                 except Exception as e:
-#                     print(f"移动失败（可能到达限位）: {e}")
+# Historical console reports failure, possibly caused by reaching a limit.
 #                     lower_limit = current_pos + step
-#                     print(f"推测下限在 {lower_limit:.1f} 附近")
+# Historical console reports the estimated lower limit.
 #             else:
-#                 print("未知命令")
+# Historical console reports an unknown command.
 #         except KeyboardInterrupt:
 #             break
 #
 #     h.close()
-#     print("\n===== 探索结果 =====")
+# Historical console heading: exploration results.
 #     if upper_limit is not None:
-#         print(f"上限（撞限位位置）: {upper_limit:.1f}")
+# Historical console reports the upper collision-limit position.
 #     else:
-#         print("未探索上限")
+# Historical console reports that the upper limit was not explored.
 #     if lower_limit is not None:
-#         print(f"下限（撞限位位置）: {lower_limit:.1f}")
+# Historical console reports the lower collision-limit position.
 #     else:
-#         print("未探索下限")
-#     print("请将这些值作为软限位使用。")
+# Historical console reports that the lower limit was not explored.
+# Historical console requests using the observed values as software limits.
 
 
 # if __name__ == '__main__':
 #     explore_z_limits()
 
-#测试所有功能主函数
+# Main test entry for all legacy functions.
 if __name__ == '__main__':
     try:
         brain = masterController()
-        brain.init()  # 初始化：回零、抬升安全高度
+        brain.init()  # Initialize by homing and raising Z to a safe height.
 
         print("\n========== 手动测试主函数 ==========")
         print("提示：移动滑轨前会自动将手爪和移液器抬到安全高度")
@@ -2656,7 +2707,7 @@ if __name__ == '__main__':
             if op == 'home':
                 brain._homing_x()
                 brain._homing_y()
-                brain.moveTo_upAndDown(Z_SAFE_HAND, Z_SAFE_MOUTH)  # 回零后再次确认
+                brain.moveTo_upAndDown(Z_SAFE_HAND, Z_SAFE_MOUTH)  # Confirm the state again after homing.
                 print("机械臂已回零，Z轴高度设置为安全值")
 
             elif op == 'm':
@@ -2760,7 +2811,7 @@ if __name__ == '__main__':
                 if accel <= 0:
                     print("加速度必须大于 0")
                     continue
-                accelerating_time = speed / accel  # 秒
+                accelerating_time = speed / accel  # Seconds.
                 spin_info = SpinInfo(
                     speed=int(round(speed)),
                     spinTime=spin_time,

@@ -13,7 +13,9 @@ from integrated_control.infrastructure.transports.modbus_rtu import crc16
 
 
 class FakeSpinModbusClient:
+    """Group checks for fake spin modbus client."""
     def __init__(self, *, execute_position_move: bool = True) -> None:
+        """Initialize fake spin modbus client dependencies and internal state."""
         self.opened = False
         self.closed = False
         self.execute_position_move = execute_position_move
@@ -25,14 +27,17 @@ class FakeSpinModbusClient:
         }
 
     def open(self) -> None:
+        """Open."""
         self.opened = True
 
     def close(self) -> None:
+        """Close."""
         self.closed = True
 
     def write_single_register(
         self, address: int, value: int, *, slave_id: int | None = None
     ) -> None:
+        """Write single register."""
         self.writes.append(("single", address, value))
         if address == 0x600C:
             self.servo_enabled = value == 1
@@ -55,6 +60,7 @@ class FakeSpinModbusClient:
     def write_multiple_registers(
         self, address: int, values: list[int], *, slave_id: int | None = None
     ) -> None:
+        """Write multiple registers."""
         data = list(values)
         self.writes.append(("multiple", address, data))
         self.registers[address] = data
@@ -62,33 +68,42 @@ class FakeSpinModbusClient:
     def read_holding_registers(
         self, address: int, count: int = 1, *, slave_id: int | None = None
     ) -> list[int]:
+        """Read holding registers."""
         return self.registers.get(address, [0] * count)
 
 
 class FakeWriteTransport:
+    """Group checks for fake write transport."""
     def __init__(self) -> None:
+        """Initialize fake write transport dependencies and internal state."""
         self.opened = False
         self.closed = False
         self.writes: list[bytes] = []
 
     def open(self) -> None:
+        """Open."""
         self.opened = True
 
     def write(self, request: bytes, *, reset_buffers: bool = True) -> None:
+        """Write."""
         self.writes.append(request)
 
     def close(self) -> None:
+        """Close."""
         self.closed = True
 
 
 def decoded_write(frame: bytes) -> tuple[int, int]:
+    """Decoded write."""
     assert frame[-2:] == crc16(frame[:-2])
     assert frame[:2] == bytes([1, 0x06])
     return int.from_bytes(frame[2:4], "big"), int.from_bytes(frame[4:6], "big")
 
 
 class NativeSpinCoaterDriverTests(unittest.TestCase):
+    """Group checks for native spin coater driver tests."""
     def test_initializes_spins_stops_and_homes_with_legacy_registers(self) -> None:
+        """Check initializes spins stops and homes with legacy registers."""
         client = FakeSpinModbusClient()
         driver = SpinCoaterDriver(
             client,  # type: ignore[arg-type]
@@ -135,6 +150,7 @@ class NativeSpinCoaterDriverTests(unittest.TestCase):
         self.assertEqual(0, state.measurements["rpm"])
 
     def test_home_fails_when_position_feedback_does_not_reach_origin(self) -> None:
+        """Check home fails when position feedback does not reach origin."""
         client = FakeSpinModbusClient(execute_position_move=False)
         driver = SpinCoaterDriver(
             client,  # type: ignore[arg-type]
@@ -156,7 +172,9 @@ class NativeSpinCoaterDriverTests(unittest.TestCase):
         self.assertEqual(("single", 0x4101, 0), client.writes[-1])
 
 class NativeVacuumStationDriverTests(unittest.TestCase):
+    """Group checks for native vacuum station driver tests."""
     def test_open_and_close_use_old_code_timed_command_sequences(self) -> None:
+        """Check open and close use old code timed command sequences."""
         transport = FakeWriteTransport()
         driver = VacuumStationDriver(
             transport,
@@ -180,6 +198,7 @@ class NativeVacuumStationDriverTests(unittest.TestCase):
         self.assertFalse(state.measurements["position_feedback"])
 
     def test_pressure_operations_fail_instead_of_faking_hardware(self) -> None:
+        """Check pressure operations fail instead of faking hardware."""
         driver = VacuumStationDriver(
             FakeWriteTransport(),  # type: ignore[arg-type]
             VacuumStationDriverConfig(command_delay_s=0.0),

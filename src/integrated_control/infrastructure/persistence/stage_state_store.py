@@ -8,6 +8,7 @@ from integrated_control.domain.errors import PersistenceError
 
 @dataclass(frozen=True)
 class StagePersistentState:
+    """Store persisted axis offsets and whether the stage is known to be at its origin."""
     stage_at_origin: bool = False
     offset_x: float = 0.0
     offset_y: float = 0.0
@@ -23,6 +24,7 @@ class StageStateStore:
         default_offset_x: float = 0.0,
         default_offset_y: float = 0.0,
     ) -> None:
+        """Initialize stage state store dependencies and internal state."""
         self._path = path
         self._lock = RLock()
         self._default = StagePersistentState(
@@ -33,9 +35,11 @@ class StageStateStore:
 
     @property
     def path(self) -> Path:
+        """Return the configured path of the stage calibration state file."""
         return self._path
 
     def load(self) -> StagePersistentState:
+        """Load the persisted stage calibration state, using defaults when no file exists."""
         with self._lock:
             try:
                 data = json.loads(self._path.read_text(encoding="utf-8"))
@@ -60,12 +64,14 @@ class StageStateStore:
                 ) from exc
 
     def save_origin(self, stage_at_origin: bool) -> StagePersistentState:
+        """Persist whether the stage is known to be at its origin."""
         with self._lock:
             state = replace(self.load(), stage_at_origin=bool(stage_at_origin))
             self._write(state)
             return state
 
     def save_offsets(self, offset_x: float, offset_y: float) -> StagePersistentState:
+        """Persist the current axis offsets and stage-origin metadata."""
         with self._lock:
             state = replace(
                 self.load(),
@@ -76,6 +82,7 @@ class StageStateStore:
             return state
 
     def _write(self, state: StagePersistentState) -> None:
+        """Serialize stage calibration state and replace the persisted file under the store lock."""
         temporary = self._path.with_suffix(self._path.suffix + ".tmp")
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)

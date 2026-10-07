@@ -17,11 +17,13 @@ class HomingService:
         sensor: PositionSensor,
         config: HomingConfig | None = None,
     ) -> None:
+        """Initialize homing service dependencies and internal state."""
         self._stage = stage
         self._sensor = sensor
         self._config = config or HomingConfig()
 
     def home_xy(self) -> ActionResult:
+        """Home both stage axes and return the combined operation result."""
         for axis in ("x", "y"):
             result = self.home_axis(axis)
             if not result.success:
@@ -42,7 +44,7 @@ class HomingService:
         )
 
     def home_axis(self, axis: Axis) -> ActionResult:
-        """Home one axis and write the detected edge into the drive as zero."""
+        """Home the selected stage axis through the sensor-based homing service."""
         marked = self._stage.mark_at_origin(False)
         if not marked.success:
             return marked
@@ -98,6 +100,7 @@ class HomingService:
             )
 
     def _search_for_trigger(self, axis: Axis, start: float) -> float | None:
+        """Move incrementally toward the home sensor until it triggers or the search limit is reached."""
         for step_index in range(1, self._config.max_steps + 1):
             target = start - step_index * self._config.step
             print(f"[stage home] try {axis.upper()} raw={target:.2f}")
@@ -111,6 +114,7 @@ class HomingService:
         return None
 
     def _search_for_release(self, axis: Axis, start: float) -> float | None:
+        """Move away from the home sensor until it releases or the search limit is reached."""
         for step_index in range(1, self.RELEASE_MAX_STEPS + 1):
             target = start + step_index * self.RELEASE_STEP
             print(f"[stage home] release {axis.upper()} sensor, raw={target:.4f}")

@@ -11,7 +11,9 @@ query_picLength = [0x56, 0x00, 0x34, 0x01, 0x00]
 order_flush = [0x56, 0x00, 0x36, 0x01, 0x03]
 
 class camera:
+    """Represent camera and its associated operations."""
     def __init__(self, serName, bps=115200, timeout=10):
+        """Initialize camera dependencies and internal state."""
         self.serName = serName
         self.bps = bps
         self.timeout = timeout
@@ -19,6 +21,7 @@ class camera:
         self.sendingTime = 0.2
 
     def writeList(self, command, len = 40):
+        """Write list."""
         print("write : ", Calculator.listToString(command))
         self.ser.write(bytes(command))
         time.sleep(self.sendingTime)
@@ -32,12 +35,14 @@ class camera:
         return response
 
     def readList(self, len = 40):
+        """Read list."""
         self.ser.flush()
         time.sleep(self.sendingTime)
         feedback = self.ser.read(len)
         return list(feedback)
 
     def readLong(self, flag1 = bytes([0xFF]), flag2 = bytes([0xD9])):
+        """Read long."""
         result = []
         lastByte = 0
         while 1 :
@@ -52,6 +57,7 @@ class camera:
 
     def snap(self):
         #self.writeList(order_refresh)
+        """Snap."""
         self.writeList(order_snap)
         lengthFeedback = self.writeList(query_picLength)
         print("the length : ", Calculator.listToString(lengthFeedback))
@@ -66,9 +72,11 @@ class camera:
             f.write(bytes(pic[5:]))
 
     def refresh(self):
+        """Refresh."""
         self.writeList(order_refresh)
 
     def cut_image(self, path, savePath):
+        """Cut image."""
         img = Image.open(path)
         w, h = img.size
         cut = (291, 316, 343, 353)
@@ -76,6 +84,7 @@ class camera:
         cropped.save(savePath, quality=95, subsampling=0)
 
     def close(self):
+        """Close."""
         self.ser.close()
 
 if __name__ == "__main__":

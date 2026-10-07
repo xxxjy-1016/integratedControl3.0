@@ -11,11 +11,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class PcApplicationStartupTests(unittest.TestCase):
+    """Group checks for pc application startup tests."""
     def test_legacy_hardware_mode_is_rejected(self) -> None:
+        """Check legacy hardware mode is rejected."""
         with self.assertRaisesRegex(ConfigurationError, "Unsupported"):
             build_device_diagnostics(PROJECT_ROOT, mode="legacy_hardware")
 
     def test_simulated_application_reaches_ready_state(self) -> None:
+        """Check simulated application reaches ready state."""
         application = build_application(PROJECT_ROOT, mode="simulation")
 
         self.assertEqual(
@@ -41,6 +44,7 @@ class PcApplicationStartupTests(unittest.TestCase):
         self.assertEqual(SystemState.STOPPED, application.controller.snapshot.state)
 
     def test_simulated_spin_coater_runs_recipe(self) -> None:
+        """Check simulated spin coater runs recipe."""
         application = build_application(PROJECT_ROOT, mode="simulation")
         application.controller.start()
         spin_coater = application.controller.devices.get("spin_coater")

@@ -10,7 +10,9 @@ from integrated_control.infrastructure.persistence import StageStateStore
 
 
 class FakeModbusClient:
+    """Group checks for fake modbus client."""
     def __init__(self) -> None:
+        """Initialize fake modbus client dependencies and internal state."""
         self.opened = False
         self.closed = False
         self.writes: list[tuple] = []
@@ -19,14 +21,17 @@ class FakeModbusClient:
         self.y_homing_started = False
 
     def open(self) -> None:
+        """Open."""
         self.opened = True
 
     def close(self) -> None:
+        """Close."""
         self.closed = True
 
     def write_single_register(
         self, address: int, value: int, *, slave_id: int | None = None
     ) -> None:
+        """Write single register."""
         self.writes.append(("single", slave_id, address, value))
         if address == 0x6060 and slave_id == 1:
             self.mode = value
@@ -39,6 +44,7 @@ class FakeModbusClient:
     def write_multiple_registers(
         self, address: int, values: list[int], *, slave_id: int | None = None
     ) -> None:
+        """Write multiple registers."""
         self.writes.append(("multiple", slave_id, address, list(values)))
         if address in {0x2320, 0x607A} and slave_id is not None:
             raw = b"".join(value.to_bytes(2, "big") for value in values)
@@ -47,6 +53,7 @@ class FakeModbusClient:
     def read_holding_registers(
         self, address: int, count: int = 1, *, slave_id: int | None = None
     ) -> list[int]:
+        """Read holding registers."""
         if address == 0x2303:
             return [0x0042]
         if address == 0x6061:
@@ -63,12 +70,15 @@ class FakeModbusClient:
     def read_data_bytes(
         self, address: int, count: int, *, slave_id: int | None = None
     ) -> bytes:
+        """Read data bytes."""
         value = self.positions[slave_id or 1]
         return value.to_bytes(4, "big", signed=True)
 
 
 class NativeStageDriverTests(unittest.TestCase):
+    """Group checks for native stage driver tests."""
     def test_initializes_both_axes_and_moves_x(self) -> None:
+        """Check initializes both axes and moves x."""
         client = FakeModbusClient()
         driver = StageDriver(client)  # type: ignore[arg-type]
 
@@ -81,6 +91,7 @@ class NativeStageDriverTests(unittest.TestCase):
         self.assertIn(("multiple", 2, 0x2320, [0, 10000]), client.writes)
 
     def test_rejects_y_target_outside_legacy_range(self) -> None:
+        """Check rejects y target outside legacy range."""
         client = FakeModbusClient()
         driver = StageDriver(client)  # type: ignore[arg-type]
         driver.initialize()
@@ -91,6 +102,7 @@ class NativeStageDriverTests(unittest.TestCase):
         self.assertEqual("STAGE_LIMIT", result.error_code)
 
     def test_x_hardware_zero_uses_current_position_clear_register(self) -> None:
+        """Check x hardware zero uses current position clear register."""
         client = FakeModbusClient()
         driver = StageDriver(client)  # type: ignore[arg-type]
         driver.initialize()
@@ -103,6 +115,7 @@ class NativeStageDriverTests(unittest.TestCase):
         self.assertIn(("single", 2, 0x2101, 1), client.writes)
 
     def test_y_hardware_zero_uses_cia402_current_position_homing(self) -> None:
+        """Check y hardware zero uses cia402 current position homing."""
         client = FakeModbusClient()
         driver = StageDriver(client)  # type: ignore[arg-type]
         driver.initialize()
@@ -121,6 +134,7 @@ class NativeStageDriverTests(unittest.TestCase):
         self.assertIn(("single", 1, 0x6060, 1), client.writes)
 
     def test_loads_saved_offsets_and_origin_flag_during_initialization(self) -> None:
+        """Check loads saved offsets and origin flag during initialization."""
         with TemporaryDirectory() as directory:
             store = StageStateStore(Path(directory) / "stage.json")
             store.save_offsets(-0.0075, -0.02)
@@ -137,6 +151,7 @@ class NativeStageDriverTests(unittest.TestCase):
             self.assertEqual(-0.02, driver.get_offset("y"))
 
     def test_logical_movement_updates_persisted_origin_flag(self) -> None:
+        """Check logical movement updates persisted origin flag."""
         with TemporaryDirectory() as directory:
             store = StageStateStore(Path(directory) / "stage.json")
             store.save_origin(True)
@@ -154,6 +169,7 @@ class NativeStageDriverTests(unittest.TestCase):
             self.assertTrue(store.load().stage_at_origin)
 
     def test_origin_state_allows_configured_position_feedback_tolerance(self) -> None:
+        """Check origin state allows configured position feedback tolerance."""
         with TemporaryDirectory() as directory:
             store = StageStateStore(Path(directory) / "stage.json")
             client = FakeModbusClient()
@@ -171,7 +187,9 @@ class NativeStageDriverTests(unittest.TestCase):
 
 
 class NativePositionSensorDriverTests(unittest.TestCase):
+    """Group checks for native position sensor driver tests."""
     def test_configures_ranges_and_converts_voltage(self) -> None:
+        """Check configures ranges and converts voltage."""
         client = FakeModbusClient()
         driver = PositionSensorDriver(client)  # type: ignore[arg-type]
 

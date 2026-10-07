@@ -6,9 +6,11 @@ class SafetySupervisor:
     """Software-level readiness checks; not a replacement for hardware safety."""
 
     def __init__(self, devices: DeviceManager) -> None:
+        """Initialize safety supervisor dependencies and internal state."""
         self._devices = devices
 
     def verify_ready(self) -> ActionResult:
+        """Check device readiness and configured startup safety conditions."""
         failed = [
             device_id
             for device_id, state in self._devices.states().items()

@@ -15,6 +15,7 @@ hardware = ["pyserial>=3.5"]
 [project.scripts]
 integrated-control = "integrated_control.app:main"
 integrated-control-debug = "integrated_control.diagnostics_cli:main"
+integrated-control-batch = "integrated_control.app:batch_main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

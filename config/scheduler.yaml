@@ -1,0 +1,10 @@
+{
+  "executer": {
+    "method": "greedy",
+    "cooldown_s": 0.1,
+    "beam_width": 200,
+    "time_limit_s": 0.05,
+    "exact_task_limit": 8,
+    "lookahead_depth": null
+  }
+}

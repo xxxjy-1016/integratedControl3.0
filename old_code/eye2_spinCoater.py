@@ -1,16 +1,16 @@
 import cv2, os
 
-cap_id = 0                 # 0 通常代表第一个 USB 摄像头，1、2…可切换别的
-cap = cv2.VideoCapture(cap_id, cv2.CAP_DSHOW)   # CAP_DSHOW 是 Windows 下加速/稳定兼容
+cap_id = 0                 # Camera index 0 usually selects the first USB camera; 1, 2, etc. select others.
+cap = cv2.VideoCapture(cap_id, cv2.CAP_DSHOW)   # CAP_DSHOW improves compatibility and startup on Windows.
 if not cap.isOpened():
     raise IOError(f'无法打开摄像头 {cap_id}')
 
-# 可选：设置分辨率、曝光
+# Optionally configure resolution and exposure.
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)   # 0.25 表示关闭自动曝光（部分相机有效）
+cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)   # Exposure value 0.25 disables automatic exposure on some cameras.
 cap.set(cv2.CAP_PROP_EXPOSURE, -10)
-cap.set(cv2.CAP_PROP_GAIN, 0)               # 增益 0 最暗
+cap.set(cv2.CAP_PROP_GAIN, 0)               # Gain 0 gives the darkest image.
 cap.set(cv2.CAP_PROP_BRIGHTNESS, 50)
 
 
@@ -29,7 +29,7 @@ while True:
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
-    elif key == ord(' '):          # 空格拍照
+    elif key == ord(' '):          # Press Space to capture an image.
         fn = os.path.join(save_dir, f'pic_{count}.jpg')
         cv2.imwrite(fn, frame)
         print('已保存:', fn)

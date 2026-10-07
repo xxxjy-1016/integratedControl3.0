@@ -1,9 +1,9 @@
-"""测试 DCM 是否能响应"""
+"""Legacy test dcm implementation retained for migration reference."""
 import time
 import serial
 import sys
 
-# 尝试连接 COM7
+# Attempt connection to COM7.
 try:
     ser = serial.Serial('COM7', 9600, timeout=1)
     print(f"串口已打开: {ser.portstr}")
@@ -11,12 +11,12 @@ except Exception as e:
     print(f"无法打开串口: {e}")
     sys.exit(1)
 
-# 发送查询 DCM 命令
+# Send the DCM query command.
 query_dcm = ">02d0172DE"
 print(f"发送查询命令: {query_dcm}")
 ser.write(query_dcm.encode('utf-8'))
 
-# 等待响应
+# Wait for a response.
 print("等待 DCM 响应...")
 start_time = time.time()
 while time.time() - start_time < 5:
@@ -28,6 +28,6 @@ while time.time() - start_time < 5:
 else:
     print("5秒内未收到 DCM 响应")
 
-# 关闭串口
+# Close the serial port.
 ser.close()
 print("测试完成")

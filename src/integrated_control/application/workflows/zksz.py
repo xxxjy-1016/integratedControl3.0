@@ -54,7 +54,9 @@ REQUIRE_LIQUID_DETECTION = False
 
 
 class WorkflowFailure(RuntimeError):
+    """Signal failure of a required device action in the process workflow."""
     def __init__(self, operation: str, result: ActionResult) -> None:
+        """Initialize workflow failure dependencies and internal state."""
         self.operation = operation
         self.result = result
         detail = result.message or result.error_code or "unknown device failure"
@@ -71,7 +73,10 @@ class ZkszWorkflow:
         sleep: Callable[[float], None] = time.sleep,
         require_bottle_cap_detection: bool = REQUIRE_BOTTLE_CAP_DETECTION,
         require_liquid_detection: bool = REQUIRE_LIQUID_DETECTION,
+        checkpoint: Callable[[str, int, int, float], None] | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        """Initialize zksz workflow dependencies and internal state."""
         devices = application.controller.devices
         self._stage = cast(Stage, devices.get("stage"))
         self._gripper = cast(Gripper, devices.get("gripper"))
@@ -86,12 +91,27 @@ class ZkszWorkflow:
         self._sleep = sleep
         self._require_bottle_cap_detection = require_bottle_cap_detection
         self._require_liquid_detection = require_liquid_detection
+        self._checkpoint = checkpoint
+        self._clock = clock
+        self._active_step = None
+
+    def _checkpoint_at(self, event: str, pose: ProcessPose) -> None:
+        """Record heater placement or departure for the active matching step and invoke its callback."""
+        if self._active_step is None:
+            return
+        kind, n, m, heater = self._active_step
+        if pose != heater or (event == "placed" and kind != "step1") or (event == "picked" and kind != "step2"):
+            return
+        at = self._clock()
+        if event == "placed":
+            self._require("登记加热台占用", self._heater.place(m, f"glass-{n}"))
+        else:
+            self._require("登记加热台释放", self._heater.remove(m))
+        if self._checkpoint is not None:
+            self._checkpoint(event, n, m, at)
 
     def run(self) -> ActionResult:
-        """单片完整 zksz 流程（含退火等待）。
-
-        等价于 _prepare_one（制备 + 上加热台）-> 退火 -> _return_one（下加热台 + 放回）。
-        """
+        """Run the complete single-glass process, including its internal annealing wait."""
         try:
             self._prepare_one(GLASS_SLOT_2, HEATER)
             print("退火 20 分钟...（本次为模拟实验，模拟退火10秒）")
@@ -109,11 +129,9 @@ class ZkszWorkflow:
         return ActionResult.done("zksz workflow completed")
 
     def _prepare_one(self, glass_pose: ProcessPose, heater_pose: ProcessPose) -> None:
-        """制备一片玻璃（取料 -> 旋涂 -> 真空闪蒸）并放到加热器上。
+        """Transfer a glass through spin coating and vacuum flashing, then place it on the heater.
 
-        对应调度器（scheduler）的 step1：本方法结束时玻璃落到加热器上，退火等待
-        （在台时间）由调度器安排在 step1 与 step2 之间，不在此处处理。
-        """
+        This is step1; the scheduler handles the subsequent heating wait."""
         print("取玻璃...")
         self._pick_glass(glass_pose)
         print("放到旋涂仪...")
@@ -187,19 +205,18 @@ class ZkszWorkflow:
         self._sleep(1.0)
 
     def _return_one(self, glass_pose: ProcessPose, heater_pose: ProcessPose) -> None:
-        """从加热器取回玻璃，放回原料台原位。
+        """Retrieve a glass from the heater and return it to its original tray slot.
 
-        对应调度器（scheduler）的 step2：本方法开始时玻璃离开加热器。
-        """
+        This is step2; physical departure is recorded at the pickup checkpoint during the action."""
         print("从退火台取玻璃...")
         self._pick_glass(heater_pose)
         print("放回原平台...")
         self._put_glass(glass_pose)
 
-    # ---- 批量制备：step1 / step2 与调度器（scheduler）对齐 -----------------
+    # Batch preparation: align step1 and step2 with the scheduler.
 
     def glass_pose(self, n: int) -> ProcessPose:
-        """把调度器玻璃片编号 n（0-based）映射为原料台槽位坐标。"""
+        """Map zero-based glass number n to its configured tray-slot pose."""
         slots = self._coordinates.get("glass_platform", {}).get("slots", [])
         if not 0 <= n < len(slots):
             raise WorkflowFailure(
@@ -218,7 +235,7 @@ class ZkszWorkflow:
         )
 
     def heater_pose(self, m: int) -> ProcessPose:
-        """把调度器加热器编号 m（1-based）映射为加热工位坐标。"""
+        """Map one-based heater number m to its configured station pose."""
         heaters = self._coordinates.get("stations", {}).get("heater", [])
         index = m - 1
         if not 0 <= index < len(heaters):
@@ -238,50 +255,51 @@ class ZkszWorkflow:
         )
 
     def step1(self, n: int, m: int) -> None:
-        """调度器 step1：制备第 n 片玻璃并放到第 m 个加热器上。
+        """Prepare glass n and load heater m synchronously.
 
-        同步阻塞直到完成；结束时玻璃落到加热器上（退火等待由调度器安排在
-        step1 与 step2 之间）。签名 (n, m) -> None 满足 scheduler 的黑盒契约。
-        """
+        Emit placement checkpoints during the operation; scheduling handles the heating wait between step1 and step2."""
         glass = self.glass_pose(n)
         heater = self.heater_pose(m)
-        self._prepare_one(glass, heater)
-        self._require(
-            "登记加热台占用",
-            self._heater.place(m, f"glass-{n}"),
-        )
+        self._active_step = ("step1", n, m, heater)
+        try:
+            self._prepare_one(glass, heater)
+        finally:
+            self._active_step = None
 
     def step2(self, n: int, m: int) -> None:
-        """调度器 step2：从第 m 个加热器取第 n 片玻璃，放回原料台。
+        """Retrieve glass n from heater m and return it to its original tray slot synchronously.
 
-        同步阻塞直到完成；开始时玻璃离开加热器。签名 (n, m) -> None 满足
-        scheduler 的黑盒契约。
-        """
+        The pickup checkpoint occurs after the gripper is raised, rather than at the start of this method."""
         glass = self.glass_pose(n)
         heater = self.heater_pose(m)
-        self._require(
-            "登记加热台释放",
-            self._heater.remove(m),
-        )
-        self._return_one(glass, heater)
+        self._active_step = ("step2", n, m, heater)
+        try:
+            self._return_one(glass, heater)
+        finally:
+            self._active_step = None
 
     def _move_to(self, pose: ProcessPose) -> None:
+        """Move the stage to the requested process pose and require successful completion."""
         self._move_safe()
         self._require("移动 XY 平台", self._stage.move_xy(pose.x, pose.y))
         self._require("移动夹爪 Z 轴", self._gripper.move_z(pose.gripper_z))
         self._require("移动移液器 Z 轴", self._pipette.move_z(pose.pipette_z))
 
-    def _move_safe(self) -> None:
+    def _move_safe(self, picked_pose: ProcessPose | None = None) -> None:
+        """Raise the gripper and pipette to their configured safe travel heights."""
         self._require(
             "夹爪抬升到安全高度",
             self._gripper.move_z(SAFE_GRIPPER_Z),
         )
+        if picked_pose is not None:
+            self._checkpoint_at("picked", picked_pose)
         self._require(
             "移液器抬升到安全高度",
             self._pipette.move_z(SAFE_PIPETTE_Z),
         )
 
     def _pick_glass(self, pose: ProcessPose) -> None:
+        """Grip the glass, raise the gripper, and emit a matching heater pickup checkpoint."""
         self._move_to(pose)
         held = self._grip()
         if not held:
@@ -295,10 +313,10 @@ class ZkszWorkflow:
             self._require("夹爪旋转 45 度", self._gripper.rotate(45.0))
             self._require("夹爪返回抓取高度", self._gripper.move_z(pose.gripper_z))
             held = self._grip()
-            self._move_safe()
+            self._move_safe(pose if held else None)
             self._require("夹爪恢复零角度", self._gripper.rotate(0.0))
         else:
-            self._move_safe()
+            self._move_safe(pose)
         if not held:
             raise WorkflowFailure(
                 "检测玻璃夹持状态",
@@ -310,20 +328,24 @@ class ZkszWorkflow:
         self._sleep(1.0)
 
     def _put_glass(self, pose: ProcessPose) -> None:
+        """Release the glass, emit a matching heater placement checkpoint, and raise the axes."""
         self._move_to(pose)
         self._require(
             "释放玻璃",
             self._gripper.set_opening(GLASS_RELEASE_OPENING),
         )
+        self._checkpoint_at("placed", pose)
         self._move_safe()
         self._sleep(1.0)
 
     def _pick_tip(self, pose: ProcessPose, tip_id: str) -> None:
+        """Align the pipette with the selected tip, attach it, and return to a safe height."""
         self._move_to(pose)
         self._require("记录已安装吸头", self._pipette.attach_tip(tip_id))
         self._sleep(1.0)
 
     def _drop_tip(self, pose: ProcessPose) -> None:
+        """Return the pipette tip to its discard pose and eject it."""
         drop_pose = ProcessPose(
             pose.x,
             pose.y,
@@ -336,6 +358,7 @@ class ZkszWorkflow:
         self._sleep(1.0)
 
     def _open_bottle(self, pose: ProcessPose, rotation: float) -> None:
+        """Move to the bottle cap, grip it, and perform the configured opening rotation."""
         self._move_to(pose)
         self._require("完全张开夹爪", self._gripper.open())
         self._require("瓶盖旋转轴归零", self._gripper.rotate(0.0))
@@ -354,6 +377,7 @@ class ZkszWorkflow:
         self._sleep(1.0)
 
     def _close_bottle(self, pose: ProcessPose) -> None:
+        """Return the bottle cap and perform the configured closing rotation."""
         self._move_to(pose)
         self._require("旋紧瓶盖", self._gripper.rotate(0.0))
         self._require("释放瓶盖", self._gripper.open())
@@ -361,6 +385,7 @@ class ZkszWorkflow:
         self._sleep(1.0)
 
     def _aspirate(self, pose: ProcessPose, volume_ul: float) -> None:
+        """Move the pipette into the source bottle and aspirate the requested volume."""
         self._move_to(pose)
         result = self._pipette.aspirate(
             volume_ul,
@@ -373,18 +398,21 @@ class ZkszWorkflow:
         self._sleep(1.0)
 
     def _dispense_all(self, pose: ProcessPose) -> None:
+        """Move to the dispensing pose and dispense all tracked liquid."""
         self._move_to(pose)
         self._require("排液", self._pipette.dispense())
         self._move_safe()
         self._sleep(1.0)
 
     def _grip(self) -> bool:
+        """Apply the workflow gripper position and torque settings and require success."""
         result = self._gripper.set_opening(GRIP_OPENING)
         self._require("夹紧物体", result)
         return result.measurements.get("holding_object") is not False
 
     @staticmethod
     def _require(operation: str, result: ActionResult) -> None:
+        """Raise WorkflowFailure when a required device operation returns an unsuccessful result."""
         if not result.success:
             raise WorkflowFailure(operation, result)
 
@@ -396,6 +424,7 @@ def run_zksz(
     require_bottle_cap_detection: bool = REQUIRE_BOTTLE_CAP_DETECTION,
     require_liquid_detection: bool = REQUIRE_LIQUID_DETECTION,
 ) -> ActionResult:
+    """Construct and run the complete single-glass workflow using the application devices."""
     return ZkszWorkflow(
         application,
         sleep=sleep,

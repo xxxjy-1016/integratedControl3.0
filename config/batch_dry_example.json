@@ -1,0 +1,11 @@
+{
+  "time_step1": 32.0,
+  "time_step2": 3.0,
+  "heat_time_min": 2.0,
+  "heat_time_max": 10.0,
+  "num_heater": 1,
+  "num_glass": 1,
+  "method": "exact",
+  "beam_width": 100,
+  "time_limit": 1.0
+}

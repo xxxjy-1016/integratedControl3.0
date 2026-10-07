@@ -8,6 +8,9 @@ from integrated_control.application.device_diagnostics import (
     DeviceDiagnosticsController,
 )
 from integrated_control.application.controller import SystemController
+from integrated_control.application.scheduler.scheduler import Scheduler, build_scheduler
+from integrated_control.application.scheduler.feedback import FeedbackPolicy
+from integrated_control.application.scheduler.algorithm import AlgorithmConfig
 from integrated_control.application.device_manager import DeviceManager
 from integrated_control.devices.position_sensor import PositionSensor
 from integrated_control.devices.stage import Stage
@@ -63,12 +66,15 @@ from integrated_control.infrastructure.persistence import StageStateStore
 
 @dataclass(frozen=True)
 class ApplicationContext:
+    """Expose the assembled controller, devices, coordinates, diagnostics, and scheduler."""
     controller: SystemController
     project_root: Path
     coordinates: dict[str, Any]
+    scheduler: Scheduler | None = None
 
 
 def _load_json_yaml(path: Path) -> dict[str, Any]:
+    """Load a UTF-8 JSON-compatible YAML configuration file and report invalid input."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -85,6 +91,7 @@ def build_application(
     *,
     mode: str | None = None,
 ) -> ApplicationContext:
+    """Load configuration and assemble devices, controller, diagnostics, and scheduler."""
     root = project_root or Path(__file__).resolve().parents[2]
     system_config = _load_json_yaml(root / "config" / "system.yaml")
     device_config = _load_json_yaml(root / "config" / "devices.yaml")
@@ -182,7 +189,19 @@ def build_application(
         devices,
         HomingService(stage, sensor, homing_config),
     )
-    return ApplicationContext(controller, root, coordinate_config)
+    scheduler_settings = _load_json_yaml(root / "config" / "scheduler.yaml")
+    try:
+        executer_settings = dict(scheduler_settings["executer"])
+        cooldown_s = executer_settings.pop("cooldown_s", 0.1)
+        scheduler_algorithm = AlgorithmConfig(**executer_settings)
+        scheduler = build_scheduler(algorithm_config=scheduler_algorithm, cooldown_s=cooldown_s)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ConfigurationError(f"Invalid Executer algorithm configuration: {exc}") from exc
+    for device_id, values in device_config.items():
+        if isinstance(values, dict) and "continuous_failure_timeout_s" in values:
+            timeout = float(values["continuous_failure_timeout_s"])
+            scheduler.actor.configure_feedback(device_id, FeedbackPolicy(timeout, timeout))
+    return ApplicationContext(controller, root, coordinate_config, scheduler)
 
 
 def build_device_diagnostics(
@@ -275,6 +294,7 @@ def _build_simulated_motion_devices(
     stage_values: dict[str, Any],
     sensor_values: dict[str, Any],
 ) -> tuple[Stage, PositionSensor]:
+    """Assemble simulated stage and sensor devices using the configured limits and offsets."""
     stage = SimulatedStage(
         initial_x=float(stage_values["initial_x"]),
         initial_y=float(stage_values["initial_y"]),
@@ -306,6 +326,7 @@ def _build_native_motion_devices(
     sensor_values: dict[str, Any],
     stage_state_store: StageStateStore | None = None,
 ) -> tuple[Stage, PositionSensor]:
+    """Assemble serial stage and position-sensor drivers using native communication settings."""
     stage_transport = _serial_transport(stage_values)
     sensor_transport = _serial_transport(sensor_values)
     stage = StageDriver(
@@ -339,6 +360,7 @@ def _build_simulated_handling_devices(
     pipette_values: dict[str, Any],
     valve_values: dict[str, Any],
 ) -> tuple[Gripper, Pipette, Valve]:
+    """Assemble simulated gripper and pipette devices."""
     return (
         SimulatedGripper(max_z=float(gripper_values.get("maximum_z", 100.0))),
         SimulatedPipette(
@@ -354,6 +376,7 @@ def _build_native_handling_devices(
     pipette_values: dict[str, Any],
     valve_values: dict[str, Any],
 ) -> tuple[Gripper, Pipette, Valve]:
+    """Assemble native gripper and pipette drivers with configured transports."""
     gripper_transport = _serial_transport(gripper_values)
     pipette_transport = _serial_transport(pipette_values)
     valve_transport = _serial_transport(valve_values)
@@ -387,6 +410,7 @@ def _build_native_process_devices(
     spin_values: dict[str, Any],
     vacuum_values: dict[str, Any],
 ) -> tuple[SpinCoater, VacuumStation]:
+    """Assemble native spin, lid, and valve drivers and the available heater/camera implementations."""
     spin_transport = _serial_transport(spin_values)
     vacuum_transport = _serial_transport(vacuum_values)
     return (

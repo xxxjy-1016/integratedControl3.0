@@ -17,17 +17,20 @@ emergentStop = [0x01, 0x06, 0x00, 0x38, 0x00, 0x01, 0xC9, 0xC7]
 expectedStop = [0x01, 0x06, 0x00, 0x38, 0x00, 0x02, 0x89, 0xC6]
 
 class controller:
+    """Represent controller and its associated operations."""
     def __init__(self, serName, bps=9600, timeout=10):
+        """Initialize controller dependencies and internal state."""
         self.serName = serName
         self.bps = bps
         self.timeout = timeout
         self.ser = serial.Serial(self.serName, self.bps, timeout=0)
         self.openPos = 0
         self.closePos = 250
-        self.motionTime = 2.5#原来是2.1
+        self.motionTime = 2.5# The previous value was 2.1.
         self.sendingTime = 0.1
 
     def setArgs(self, accTime, decTime, speed, initSpeed = 10):
+        """Set args."""
         command = [0x01, 0x06, 0x00, 0x1E, 0x07, 0xD0, 0xEA, 0x60]
         self.writeList(command)
         command = [0x01, 0x06, 0x00, 0x1F, 0x03, 0xE8, 0xB8, 0xB2]
@@ -54,15 +57,19 @@ class controller:
         self.writeList(setDec)
 
     def setAbsolutePositionMode(self):
+        """Set absolute position mode."""
         self.writeList(setAbsolutePosition)
 
     def enable(self):
+        """Enable."""
         self.writeList(setEnable)
 
     def run(self):
+        """Run the evacuation space operation sequence."""
         self.writeList(setRun)
 
     def setPosition(self, pos):
+        """Set position."""
         command = [0x01, 0x06, 0x00, 0x34]
         if pos >= 0:
             command += Calculator.intToList(pos)
@@ -80,24 +87,26 @@ class controller:
         self.writeList(command)
 
     def openLid(self):
+        """Open lid."""
         self.expectedStop()
-        # 开盖负载极小（无密封圈阻力），速度可以很快，比如 -200
+        # Opening has little seal resistance and can use a fast speed, such as -200.
         self.setArgs(50, 50, -120)
         self.enable()
         self.setPosition(self.openPos)
         self.run()
-        # 关键：开盖时间独立设定。
+        # Configure the lid opening duration independently.
         time.sleep(2.8)#2.9
         self.stop()
 
     def closeLid(self):
+        """Close lid."""
         self.expectedStop()
-        # 关盖负载极大（压缩密封圈），速度必须慢，扭矩才够，比如降到 60 或 80
+        # Closing compresses the seal; a lower speed such as 60 or 80 provides sufficient torque.
         self.setArgs(50, 50, 105)
         self.enable()
         self.setPosition(self.closePos)
         self.run()
-        # 关键：关盖时间独立设定
+        # Configure the lid closing duration independently.
         time.sleep(3.3)#3.5
         self.stop()
 
@@ -122,15 +131,19 @@ class controller:
     #     self.stop()
 
     def stop(self):
+        """Stop."""
         self.writeList(stop)
 
     def emergentStop(self):
+        """Emergent stop."""
         self.writeList(emergentStop)
 
     def expectedStop(self):
+        """Expected stop."""
         self.writeList(expectedStop)
 
     def writeList(self, command):
+        """Write list."""
         self.ser.write(bytes(command))
         #print("send    : ", Calculator.listToString(command))
         self.ser.reset_input_buffer()
@@ -141,6 +154,7 @@ class controller:
         #print("receive : ", Calculator.listToString(list(feedback)))
 
     def close(self):
+        """Close."""
         self.ser.close()
 
 

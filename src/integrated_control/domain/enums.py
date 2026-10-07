@@ -2,6 +2,7 @@ from enum import Enum
 
 
 class SystemState(str, Enum):
+    """Enumerate supported system state values."""
     BOOTING = "BOOTING"
     INITIALIZING = "INITIALIZING"
     HOMING = "HOMING"
@@ -14,6 +15,7 @@ class SystemState(str, Enum):
 
 
 class DeviceLifecycle(str, Enum):
+    """Enumerate supported device lifecycle values."""
     OFFLINE = "OFFLINE"
     READY = "READY"
     FAULT = "FAULT"

@@ -11,6 +11,7 @@ class ValveDriver(Valve):
     POWER_REGISTER = 0x0000
 
     def __init__(self, client: ModbusRtuClient, *, device_id: str = "valve") -> None:
+        """Initialize valve driver dependencies and internal state."""
         self._client = client
         self._device_id = device_id
         self._initialized = False
@@ -20,9 +21,11 @@ class ValveDriver(Valve):
 
     @property
     def device_id(self) -> str:
+        """Return the device id exposed by this component."""
         return self._device_id
 
     def initialize(self) -> ActionResult:
+        """Initialize the valve driver and return its readiness or failure result."""
         self._activity = "INITIALIZING"
         try:
             self._client.open()
@@ -40,12 +43,15 @@ class ValveDriver(Valve):
         return ActionResult.done("Native valve initialized in the closed state")
 
     def open(self) -> ActionResult:
+        """Open the solenoid valve and report the resulting state."""
         return self._set_state(True)
 
     def close(self) -> ActionResult:
+        """Close the solenoid valve and report the resulting state."""
         return self._set_state(False)
 
     def stop(self) -> ActionResult:
+        """Request valve driver shutdown and report the implementation result; physical stop support depends on the driver."""
         close_error: IntegratedControlError | None = None
         if self._initialized:
             try:
@@ -64,6 +70,7 @@ class ValveDriver(Valve):
         return ActionResult.done("Native valve closed and connection released")
 
     def get_state(self) -> DeviceState:
+        """Return the device lifecycle, activity, measurements, and any reported fault."""
         lifecycle = "FAULT" if self._fault else (
             "READY" if self._initialized else "OFFLINE"
         )
@@ -76,6 +83,7 @@ class ValveDriver(Valve):
         )
 
     def _set_state(self, is_open: bool) -> ActionResult:
+        """Set the native solenoid valve state and update its tracked observation."""
         if not self._initialized:
             return ActionResult.failed("DEVICE_NOT_READY", "Valve is not initialized")
         self._activity = "OPENING" if is_open else "CLOSING"
@@ -93,6 +101,7 @@ class ValveDriver(Valve):
         )
 
     def _failure(self, code: str, exc: Exception) -> ActionResult:
+        """Record the driver fault and return a failed ActionResult with its error code."""
         self._fault = str(exc) or type(exc).__name__
         self._activity = "FAULT"
         return ActionResult.failed(code, self._fault)

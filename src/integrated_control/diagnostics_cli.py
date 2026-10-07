@@ -16,16 +16,22 @@ HARDWARE_MODES = {"native_hardware", "hardware"}
 
 
 def _parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for this entry point."""
     parser = argparse.ArgumentParser(description="集成设备人工调试器")
     parser.add_argument(
         "--mode",
         choices=("simulation", "native_hardware", "hardware"),
         help="覆盖 config/system.yaml 中的运行模式",
     )
+    parser.add_argument("command", nargs="?", choices=("dry", "gantt"),
+                        help="直接计算离线方案，不启动设备连接")
+    parser.add_argument("scheduler_args", nargs=argparse.REMAINDER,
+                        help="传给调度 CLI 的参数")
     return parser
 
 
 def _print_help() -> None:
+    """Print the supported diagnostic commands and their argument syntax."""
     print(
         """命令：
   p | status             显示所有调试设备状态
@@ -63,12 +69,18 @@ def _print_help() -> None:
 阀门：
   vopen / vclose         打开或关闭阀门
 
+调度方案（不执行设备动作）：
+  dry --algorithm <算法> [参数]    计算并打印完整方案
+  gantt --algorithm <算法> [参数]  计算方案并显示文本甘特图
+  dry --help                      显示调度参数
+
   help                   显示帮助
   q | quit               关闭连接并退出"""
     )
 
 
 def _print_result(result: ActionResult) -> None:
+    """Print an operation result, including its error and measurement details."""
     if result.success:
         suffix = f"：{result.measurements}" if result.measurements else ""
         print(f"完成 - {result.message}{suffix}")
@@ -77,6 +89,7 @@ def _print_result(result: ActionResult) -> None:
 
 
 def _print_snapshot(value: MotionSnapshot) -> None:
+    """Print the current motion positions, offsets, sensor readings, and system state."""
     print(
         f"X: 逻辑={value.logical_x:.3f}, 原始={value.raw_x:.3f}, "
         f"偏移={value.offset_x:.3f}, 传感器={'触发' if value.sensor_x_triggered else '未触发'} "
@@ -90,6 +103,7 @@ def _print_snapshot(value: MotionSnapshot) -> None:
 
 
 def _print_device_states(controller: DeviceDiagnosticsController) -> None:
+    """Print lifecycle, activity, measurements, and fault information for each device."""
     for name, state in controller.device_states().items():
         fault = f", 故障={state.fault}" if state.fault else ""
         print(
@@ -101,6 +115,7 @@ def _print_device_states(controller: DeviceDiagnosticsController) -> None:
 def _sensor_reading(
     controller: DeviceDiagnosticsController, axis: Axis
 ) -> ActionResult:
+    """Read and format the selected position sensor for diagnostic output."""
     voltage = controller.sensor.read_voltage(axis)
     triggered = controller.sensor.is_triggered(axis)
     return ActionResult.done(
@@ -112,6 +127,7 @@ def _sensor_reading(
 def _set_offset(
     controller: DeviceDiagnosticsController, axis: Axis, value: float
 ) -> ActionResult:
+    """Validate a diagnostic offset command and update the selected stage axis."""
     controller.stage.set_offset(axis, value)
     marked = controller.stage.mark_at_origin(False)
     if not marked.success:
@@ -124,6 +140,7 @@ def _set_offset(
 def _move_raw(
     controller: DeviceDiagnosticsController, axis: Axis, raw_target: float
 ) -> ActionResult:
+    """Parse a diagnostic movement command and move without applying the stage offset."""
     return controller.stage.move_axis_raw(axis, raw_target)
 
 
@@ -133,6 +150,14 @@ def execute_command(controller: DeviceDiagnosticsController, line: str) -> bool:
     if not parts:
         return True
     command = parts[0].lower()
+    if command in {"dry", "gantt"}:
+        from integrated_control.application.scheduler.cli import main as scheduler_cli
+        try:
+            scheduler_cli([command, *parts[1:]])
+        except SystemExit:
+            # argparse help/errors must not terminate the diagnostic session.
+            pass
+        return True
     if command in {"q", "quit", "exit"}:
         return False
     if command in {"help", "?"}:
@@ -222,7 +247,11 @@ def execute_command(controller: DeviceDiagnosticsController, line: str) -> bool:
 
 
 def main() -> int:
+    """Parse command-line arguments and run the diagnostics cli entry point."""
     args = _parser().parse_args()
+    if args.command is not None:
+        from integrated_control.application.scheduler.cli import main as scheduler_cli
+        return scheduler_cli([args.command, *args.scheduler_args])
     selected_mode = args.mode
     try:
         controller = build_device_diagnostics(mode=selected_mode)

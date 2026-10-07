@@ -15,6 +15,7 @@ from integrated_control.infrastructure.transports.modbus_rtu import ModbusRtuCli
 
 @dataclass(frozen=True)
 class GripperDriverConfig:
+    """Store configuration values for gripper driver."""
     minimum_z: float = 0.0
     maximum_z: float = 100.0
     z_pulses_per_100: int = 15000
@@ -43,6 +44,7 @@ class GripperDriver(Gripper):
         transport: AsciiSerialTransport,
         config: GripperDriverConfig | None = None,
     ) -> None:
+        """Initialize gripper driver dependencies and internal state."""
         self._transport = transport
         self._client = ModbusRtuClient(transport)
         self._config = config or GripperDriverConfig()
@@ -57,9 +59,11 @@ class GripperDriver(Gripper):
 
     @property
     def device_id(self) -> str:
+        """Return the device id exposed by this component."""
         return "gripper"
 
     def initialize(self) -> ActionResult:
+        """Initialize the gripper driver and return its readiness or failure result."""
         self._activity = "INITIALIZING"
         try:
             self._transport.open()
@@ -82,6 +86,7 @@ class GripperDriver(Gripper):
         return ActionResult.done("Native gripper initialized")
 
     def move_z(self, height: float) -> ActionResult:
+        """Move the vertical axis to the requested position and report the operation result."""
         if failure := self._ready_failure():
             return failure
         if not self._config.minimum_z <= height <= self._config.maximum_z:
@@ -102,6 +107,7 @@ class GripperDriver(Gripper):
         return ActionResult.done("Gripper Z movement completed", {"z": height})
 
     def set_opening(self, opening: float) -> ActionResult:
+        """Set the gripper opening position using the supplied motion and torque settings."""
         if failure := self._ready_failure():
             return failure
         if not 0.0 <= opening <= 100.0:
@@ -125,12 +131,14 @@ class GripperDriver(Gripper):
         )
 
     def open(self) -> ActionResult:
+        """Open the gripper using its configured opening or clamping settings."""
         result = self.set_opening(100.0)
         if result.success:
             self._force = 0.0
         return result
 
     def close(self, force: float = 50.0) -> ActionResult:
+        """Close the gripper using its configured opening or clamping settings."""
         if failure := self._ready_failure():
             return failure
         if not 10.0 <= force <= 100.0:
@@ -145,6 +153,7 @@ class GripperDriver(Gripper):
         return self.set_opening(0.0)
 
     def rotate(self, angle: float) -> ActionResult:
+        """Rotate the gripper by the requested angle and report completion or failure."""
         if failure := self._ready_failure():
             return failure
         target = round(angle)
@@ -165,6 +174,7 @@ class GripperDriver(Gripper):
         )
 
     def stop(self) -> ActionResult:
+        """Request gripper driver shutdown and report the implementation result; physical stop support depends on the driver."""
         try:
             self._transport.close()
         except IntegratedControlError as exc:
@@ -177,6 +187,7 @@ class GripperDriver(Gripper):
         )
 
     def get_state(self) -> DeviceState:
+        """Return the device lifecycle, activity, measurements, and any reported fault."""
         lifecycle = "FAULT" if self._fault else (
             "READY" if self._initialized else "OFFLINE"
         )
@@ -196,6 +207,7 @@ class GripperDriver(Gripper):
         )
 
     def _wait_z(self) -> None:
+        """Poll vertical-axis feedback until the requested position is reached or a timeout occurs."""
         wait_for_ascii_status(
             self._transport,
             self.Z_QUERY,
@@ -205,6 +217,7 @@ class GripperDriver(Gripper):
         )
 
     def _wait_modbus(self, address: int, accepted: set[int]) -> int:
+        """Poll Modbus operation status until completion or timeout."""
         deadline = time.monotonic() + self._config.movement_timeout_s
         while time.monotonic() < deadline:
             value = self._client.read_holding_registers(address)[0]
@@ -218,17 +231,20 @@ class GripperDriver(Gripper):
         )
 
     def _ready_failure(self) -> ActionResult | None:
+        """Return a not-ready or fault result when the component cannot accept an operation."""
         if not self._initialized:
             return ActionResult.failed("DEVICE_NOT_READY", "Gripper is not initialized")
         return None
 
     def _close_after_failure(self) -> None:
+        """Close available transports after an initialization or communication failure."""
         try:
             self._transport.close()
         except IntegratedControlError:
             pass
 
     def _failure(self, code: str, exc: Exception) -> ActionResult:
+        """Record the driver fault and return a failed ActionResult with its error code."""
         self._fault = str(exc) or type(exc).__name__
         self._activity = "FAULT"
         return ActionResult.failed(code, self._fault)

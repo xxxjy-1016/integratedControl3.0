@@ -1,134 +1,244 @@
 # -*- coding: utf-8 -*-
-"""批量 zksz 制备：用调度器（scheduler）的排程结果驱动主程序设备。
-
-这是 scheduler 子项目与主程序（integrated_control）之间的集成层，职责：
-  1. 从主程序配置（coordinates.yaml 的玻璃槽位 / 加热工位）推导调度参数；
-  2. 调用 scheduler.glass_heat_scheduler.solve 生成 step1/step2 计划；
-  3. 把 ZkszWorkflow 的 step1/step2 作为黑盒执行函数注入 scheduler.run_plan，
-     按计划时刻批量制备产品。
-
-step1 / step2 语义（与调度器模型对齐）：
-  step1(n, m) = 制备第 n 片玻璃（取料 -> 旋涂 -> 真空闪蒸）并放到第 m 个加热器；
-  step2(n, m) = 从第 m 个加热器取第 n 片玻璃，放回原料台。
-退火等待（在台时间）落在 step1 结束与 step2 开始之间，由调度器统一安排。
-"""
+"""Validated batch parameters and online glass experiment orchestration."""
 
 from __future__ import annotations
 
-import sys
 import time
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Callable
+import math
+from dataclasses import dataclass, replace
+from typing import Any, Callable, Mapping
 
-from integrated_control.application.workflows.zksz import ZkszWorkflow
+from integrated_control.application.scheduler import algorithm
 from integrated_control.bootstrap import ApplicationContext
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+import json
+from pathlib import Path
+from uuid import uuid4
+from integrated_control.application.scheduler import build_scheduler
+from integrated_control.application.scheduler.contracts import TaskStatus
+from integrated_control.application.scheduler.decision_preview import FifoPreview, OnlineTiming
+from integrated_control.domain.results import ActionResult
+from .zksz import ZkszWorkflow
+
 
 
 @dataclass(frozen=True)
 class BatchParams:
-    """批量制备的调度参数（与 scheduler.Params 一一对应）。
+    """Store and validate batch process parameters.
 
-    num_heater / num_glass 为 None 时从主程序配置自动推导：
-      num_heater <- coordinates.yaml 的 stations.heater 工位数；
-      num_glass  <- coordinates.yaml 的 glass_platform.slots 槽位数。
-    """
+    When counts are None, resolve num_glass from glass_platform.slots and num_heater from stations.heater in coordinates.yaml."""
 
-    time_step1: float = 100.0  # step1（制备 + 上加热台）估算耗时（秒）
-    time_step2: float = 20.0  # step2（下加热台 + 放回）估算耗时（秒）
-    heat_time_min: float = 1200.0  # 退火在台时间下界（秒）
-    heat_time_max: float = 1210.0  # 退火在台时间上界（秒）
-    num_heater: int | None = None  # 加热器数量；None = 自动推导
-    num_glass: int | None = None  # 玻璃片总数；None = 自动推导
-    heat_measure: str = "until_pickup"
+    time_step1: float = 100.0  # Estimated duration of step1: preparation and heater loading, in seconds.
+    time_step2: float = 20.0  # Estimated duration of step2: heater pickup and tray return, in seconds.
+    heat_time_min: float = 1200.0  # Minimum residence time on the heater, in seconds.
+    heat_time_max: float = 1210.0  # Maximum residence time on the heater, in seconds.
+    num_heater: int | None = None  # Heater count; None derives it from configured coordinates.
+    num_glass: int | None = None  # Glass count; None derives it from configured tray slots.
     method: str = "auto"
     beam_width: int = 800
     time_limit: float = 30.0
 
+    def __post_init__(self) -> None:
+        """Validate and normalize the initialized batch params fields."""
+        for name in ("time_step1", "time_step2", "heat_time_min", "heat_time_max"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ValueError(f"{name} 必须为有限数值")
+        if self.time_step1 <= 0 or self.time_step2 <= 0:
+            raise ValueError("time_step1 / time_step2 必须为正")
+        if self.heat_time_min < 0 or self.heat_time_max < self.heat_time_min:
+            raise ValueError("加热时间必须满足 0 <= heat_time_min <= heat_time_max")
+        for name, minimum in (("num_glass", 0), ("num_heater", 1)):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or value < minimum):
+                raise ValueError(f"{name} 必须为 >= {minimum} 的整数或 None")
+        algorithm.AlgorithmConfig(self.method, beam_width=self.beam_width, time_limit_s=self.time_limit)
 
-def _load_scheduler(project_root: Path):
-    """加载 scheduler 子项目（独立目录，不在主程序 src 包内）。"""
-    root = str(project_root)
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    from scheduler import glass_heat_scheduler, run_plan
+    @property
+    def slack(self) -> float:
+        """Return the difference between the maximum and minimum heating residence times."""
+        return self.heat_time_max - self.heat_time_min
 
-    return glass_heat_scheduler, run_plan
+    def to_dict(self) -> dict[str, Any]:
+        """Return process parameters without mixing in algorithm settings."""
+        return {name: getattr(self, name) for name in (
+            "time_step1", "time_step2", "heat_time_min", "heat_time_max",
+            "num_heater", "num_glass")}
 
-
-def _build_params_dict(
-    application: ApplicationContext,
-    batch: BatchParams,
-) -> dict[str, Any]:
-    """从主程序配置 + BatchParams 推导 scheduler.Params 的构造参数。"""
-    coordinates = application.coordinates
-    if batch.num_glass is None:
-        num_glass = len(coordinates.get("glass_platform", {}).get("slots", []))
-    else:
-        num_glass = batch.num_glass
-    if batch.num_heater is None:
-        num_heater = len(coordinates.get("stations", {}).get("heater", []))
-    else:
-        num_heater = batch.num_heater
-
-    return {
-        "time_step1": batch.time_step1,
-        "time_step2": batch.time_step2,
-        "heat_time_min": batch.heat_time_min,
-        "heat_time_max": batch.heat_time_max,
-        "num_heater": num_heater,
-        "num_glass": num_glass,
-        "heat_measure": batch.heat_measure,
-    }
+    def resolve(self, coordinates: Mapping[str, Any]) -> BatchParams:
+        """Derive omitted counts from coordinates and revalidate the resulting BatchParams."""
+        return replace(self,
+            num_glass=self.num_glass if self.num_glass is not None else
+                len(coordinates.get("glass_platform", {}).get("slots", [])),
+            num_heater=self.num_heater if self.num_heater is not None else
+                len(coordinates.get("stations", {}).get("heater", [])))
 
 
 def run_batch_zksz(
     application: ApplicationContext,
     *,
     batch: BatchParams | None = None,
-    mode: str = "simulate",
+    mode: str = "online",
     log_path: str | None = None,
     sleep: Callable[[float], None] | None = None,
+    online_timing=None,
+    algorithm_config=None,
+    clock: Callable[[], float] = time.monotonic,
+    visual_check=None,
 ):
-    """批量制备入口：排程并执行 zksz 批量工艺。
-
-    mode:
-      "simulate"  用调度器内置物理校验模拟器重放计划（不驱动设备，快速验证排程）；
-      "realtime"  把 ZkszWorkflow 的 step1/step2 注入执行器，按真实时钟驱动设备；
-      "dry"       只打印指令序列，不执行。
-
-    sleep: 注入给 ZkszWorkflow 的休眠函数（默认 time.sleep）。测试/台架联调时
-    可传入 lambda _s: None 跳过工艺内的等待，加快验证。
-
-    返回 scheduler 的 Plan 对象（含 makespan / feasible / commands 等），
-    调用方据此判断成败。
-    """
+    """Run an online batch using the same scheduling loop for simulated and native devices."""
+    if mode != "online":
+        raise ValueError("Batch execution supports online only; use diagnostics_cli dry/gantt for planning")
     batch = batch or BatchParams()
-    glass_heat_scheduler, run_plan = _load_scheduler(application.project_root)
+    params = batch.resolve(application.coordinates)
+    if online_timing is None:
+        raise ValueError("Online mode requires explicit duration bounds and checkpoint offsets")
+    if application.scheduler is None:
+        raise ValueError("Application scheduler is required for online mode")
+    if algorithm_config is not None:
+        application.scheduler.executer.configure(algorithm_config)
+    return _run_experiment(application, params, online_timing, sleep=sleep or time.sleep,
+                           clock=clock, log_path=log_path, visual_check=visual_check)
 
-    params = glass_heat_scheduler.Params(**_build_params_dict(application, batch))
-    plan = glass_heat_scheduler.solve(
-        params,
-        method=batch.method,
-        beam_width=batch.beam_width,
-        time_limit=batch.time_limit,
-    )
 
-    print(glass_heat_scheduler._format_report(plan))
+@dataclass(frozen=True)
+class OnlineRunReport:
+    """Summarize online batch completion, task records, elapsed time, and errors."""
+    success: bool
+    records: tuple
+    makespan: float
+    errors: tuple[str, ...] = ()
 
-    if not plan.feasible:
-        return plan
+    @property
+    def feasible(self):
+        """Check whether the candidate order satisfies the independent scheduling constraints."""
+        return self.success
 
-    if mode == "realtime":
-        workflow = ZkszWorkflow(application, sleep=sleep or time.sleep)
-        run_plan.execute_plan(
-            plan,
-            workflow.step1,
-            workflow.step2,
-            mode=mode,
-            log_path=log_path,
-        )
-    else:
-        run_plan.execute_plan(plan, None, None, mode=mode, log_path=log_path)
 
-    return plan
+def _run_experiment(application, params, timing: OnlineTiming, *, sleep=time.sleep,
+                    clock=time.monotonic, log_path=None, visual_check=None,
+                    pending_tolerance_s=3.0, running_tolerance_s=3.0):
+    """Physical checkpoints use command completion; optional camera may refine them.
+
+    Duration bounds and offsets must match the bench. Timeout marks a task but
+    does not assert that hardware stopped; wait for the driver to return, retain
+    claims and forbid further dispatch. Existing driver timeouts remain active."""
+    if application.controller.snapshot.state.value != "READY":
+        raise ValueError("Start the application before online execution")
+    if (params.heat_time_min, params.heat_time_max) != (timing.heat_min_s, timing.heat_max_s):
+        raise ValueError("Batch heating window and online timing window must match")
+    if params.num_glass > len(application.coordinates.get("glass_platform", {}).get("slots", [])):
+        raise ValueError("Not enough configured glass slots")
+    if params.num_heater > len(application.coordinates.get("stations", {}).get("heater", [])):
+        raise ValueError("Not enough configured heater slots")
+    log_file = Path(log_path) if log_path is not None else None
+    if log_file is not None:
+        # Create and validate the destination before any task can be claimed.
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with log_file.open("a", encoding="utf-8"):
+            pass
+    system = application.scheduler or build_scheduler(clock=clock)
+    if any(r.status in (TaskStatus.PENDING, TaskStatus.RUNNING) for r in system.task_manager.snapshot()):
+        raise ValueError("Another experiment is active")
+    if running_tolerance_s < 0:
+        raise ValueError("Running tolerance must be nonnegative")
+    preview = FifoPreview(timing, clock=clock)
+    actor, viewer = system.actor, system.viewer
+    actor.configure_resources({"arm": 1, **{f"heater:{m}": 1 for m in range(1, params.num_heater + 1)}})
+    for kind, bound in (("step1", timing.step1_bound_s), ("step2", timing.step2_bound_s)):
+        system.task_manager.configure_tolerance(kind, pending_s=pending_tolerance_s,
+                                                running_s=bound + running_tolerance_s)
+    # Device get_state() may be cached: publish without inventing a timestamp.
+    viewer.publish_confirmed("devices", application.controller.devices.states())
+    experiment_id = uuid4().hex
+    specs = system.experiment_manager.submit("zksz", {
+        "experiment_id": experiment_id, "glass_ids": range(params.num_glass)})
+    ids = {t.task_id for t in specs}
+    viewer.publish_confirmed("samples", {str(n): {"n": n, "position": "tray"}
+                                          for n in range(params.num_glass)})
+
+    def log(event, **values):
+        """Append a timestamped runtime event to the optional batch log."""
+        if log_file is not None:
+            with log_file.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({"event": event, "at": clock(), **values}, ensure_ascii=False) + "\n")
+
+    def checkpoint(event, n, m, at):
+        """Publish actual glass placement/pickup facts and release heater occupancy on departure."""
+        sample = viewer.snapshot()["samples"][str(n)]
+        if event == "placed":
+            record = next(r for r in system.task_manager.snapshot()
+                          if r.spec.task_id == f"{experiment_id}:{n}:step1")
+            sample = {"n": n, "m": m, "placed_at": at, "position": "heater", "owner": record.request_id}
+        else:
+            # Release heater only after successful gripper lift, even if return later fails.
+            actor.release_resources(sample["owner"], only_names=(f"heater:{m}",))
+            sample = {**sample, "position": "gripper", "picked_at": at}
+        viewer.publish_confirmed("samples", {str(n): sample})
+        viewer.publish_confirmed("devices", application.controller.devices.states())
+        log(event, n=n, m=m)
+        if event == "picked":
+            heat = at - sample["placed_at"]
+            if heat < timing.heat_min_s or heat > timing.heat_max_s:
+                raise RuntimeError(f"Actual heating time outside window: {heat:.3f}s")
+        if visual_check is not None:
+            result = visual_check(event, n, m)
+            if not result.success:
+                raise RuntimeError(result.message or "Visual checkpoint rejected")
+
+    workflow = ZkszWorkflow(application, sleep=sleep, checkpoint=checkpoint, clock=clock)
+
+    def handle(task):
+        """Execute the selected glass step and publish its resulting sample/device state."""
+        n, m = task.parameters["n"], task.parameters["m"]
+        getattr(workflow, task.kind)(n, m)
+        if task.kind == "step2":
+            sample = viewer.snapshot()["samples"][str(n)]
+            viewer.publish_confirmed("samples", {str(n): {**sample, "position": "tray"}})
+        viewer.publish_confirmed("devices", application.controller.devices.states())
+        return ActionResult.done()
+
+    for kind in ("step1", "step2"):
+        actor.register(kind, handle, replace_existing=True)
+    start = clock()
+    errors = []
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        while True:
+            records = tuple(r for r in system.task_manager.snapshot() if r.spec.task_id in ids)
+            if all(r.status == TaskStatus.SUCCEEDED for r in records):
+                break
+            if system.executer.cooldown_remaining > 0:
+                sleep(min(system.executer.cooldown_remaining, 0.1))
+                continue
+            task = system.executer.propose(preview, preview.prepare,
+                model_builder=preview.planning_model, planning_capacities=preview.planning_capacities)
+            if task is None:
+                snapshot = viewer.decision_snapshot()
+                queue = preview.queue(snapshot)
+                if queue and preview.chain_ok(clock(), [(s["placed_at"], s["placed_at"]) for s in queue]):
+                    delay = preview.release_at(queue[0]["placed_at"]) - clock()
+                    if delay > 0:
+                        sleep(min(delay, 0.1))
+                        continue
+                errors.append("No admissible task under current resources and heating deadlines")
+                break
+            try:
+                request = system.executer.accept(task)
+            except ValueError:
+                # Time/resources may change after propose; recompute from Views.
+                continue
+            log("sent", task_id=task.task_id, request_id=request)
+            future = worker.submit(actor.execute_accepted, task, request)
+            while True:
+                try:
+                    result = future.result(timeout=0.05)
+                    break
+                except FutureTimeout:
+                    system.task_manager.expire()
+            log("finished", task_id=task.task_id, status=result.status)
+            if not result.success:
+                errors.append(result.message or result.error_code or result.status)
+                break
+    records = tuple(r for r in system.task_manager.snapshot() if r.spec.task_id in ids)
+    return OnlineRunReport(not errors and all(r.status == TaskStatus.SUCCEEDED for r in records),
+                           records, clock() - start, tuple(errors))

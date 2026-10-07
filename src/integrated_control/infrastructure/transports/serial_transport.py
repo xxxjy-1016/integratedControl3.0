@@ -11,6 +11,7 @@ from integrated_control.domain.errors import (
 
 @dataclass(frozen=True)
 class SerialSettings:
+    """Store configuration values for serial settings."""
     port: str
     baudrate: int
     timeout_s: float = 1.0
@@ -26,6 +27,7 @@ class SerialTransport:
         *,
         serial_instance: Any | None = None,
     ) -> None:
+        """Initialize serial transport dependencies and internal state."""
         self.settings = settings
         self._serial = serial_instance
         self._owns_serial = serial_instance is None
@@ -33,11 +35,13 @@ class SerialTransport:
 
     @property
     def is_open(self) -> bool:
+        """Return whether the underlying serial connection is currently open."""
         return self._serial is not None and bool(
             getattr(self._serial, "is_open", True)
         )
 
     def open(self) -> None:
+        """Open the underlying serial connection."""
         with self._lock:
             if self.is_open:
                 return
@@ -70,6 +74,7 @@ class SerialTransport:
         response_size: int = 256,
         reset_buffers: bool = True,
     ) -> bytes:
+        """Send request bytes and read the serial response under the transport lock."""
         with self._lock:
             self.open()
             assert self._serial is not None
@@ -105,8 +110,7 @@ class SerialTransport:
 
         Modbus RTU responses have a known frame length.  Unlike ``transact``,
         this method keeps reading when a non-blocking serial port delivers the
-        frame in multiple chunks.
-        """
+        frame in multiple chunks."""
         if response_size <= 0:
             raise ValueError("response_size must be positive")
         with self._lock:
@@ -152,8 +156,7 @@ class SerialTransport:
 
         Some of the workstation's ASCII controllers acknowledge completion only
         through a later status query.  Keeping that distinction in the transport
-        prevents a fire-and-query command from being reported as a timeout.
-        """
+        prevents a fire-and-query command from being reported as a timeout."""
         with self._lock:
             self.open()
             assert self._serial is not None
@@ -172,6 +175,7 @@ class SerialTransport:
                 ) from exc
 
     def close(self) -> None:
+        """Close the underlying serial connection."""
         with self._lock:
             if self._serial is None:
                 return

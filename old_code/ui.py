@@ -10,16 +10,17 @@ from PyQt6.QtGui import QFont, QColor
 
 
 class ArrayDisplayDialog(QDialog):
-    """数组显示对话框"""
+    """Display an array with clipboard-copy controls."""
 
     def __init__(self, data, parent=None):
+        """Initialize array display dialog dependencies and internal state."""
         super().__init__(parent)
         self.setWindowTitle("旋涂参数数组")
         self.setFixedSize(600, 500)
 
         layout = QVBoxLayout(self)
 
-        # 标题
+        # Title.
         title_label = QLabel("导出的旋涂参数数组")
         title_font = QFont()
         title_font.setPointSize(16)
@@ -28,23 +29,23 @@ class ArrayDisplayDialog(QDialog):
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
-        # 说明
+        # Description.
         desc_label = QLabel("以下是可以直接在其他Python代码中使用的数组：")
         desc_label.setFont(QFont("Microsoft YaHei", 10))
         layout.addWidget(desc_label)
 
-        # 文本编辑框显示数组
+        # Display the array in a text editor.
         self.text_edit = QTextEdit()
-        self.text_edit.setFont(QFont("Consolas", 10))  # 使用等宽字体
+        self.text_edit.setFont(QFont("Consolas", 10))  # Use a monospaced font.
         self.text_edit.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
 
-        # 格式化显示数组
+        # Format the array for display.
         formatted_data = self.format_array(data)
         self.text_edit.setPlainText(formatted_data)
 
-        layout.addWidget(self.text_edit, 1)  # 添加权重使其可扩展
+        layout.addWidget(self.text_edit, 1)  # Set stretch weights to permit expansion.
 
-        # 按钮区域
+        # Button area.
         button_layout = QHBoxLayout()
 
         copy_button = QPushButton("复制到剪贴板")
@@ -64,7 +65,7 @@ class ArrayDisplayDialog(QDialog):
         self.data = data
 
     def format_array(self, data):
-        """格式化数组为可读的字符串"""
+        """Format an array as readable text."""
         if not data:
             return "# 当前没有旋涂参数数据\n[]"
 
@@ -91,35 +92,37 @@ class ArrayDisplayDialog(QDialog):
         return "\n".join(result)
 
     def copy_to_clipboard(self):
-        """复制到剪贴板"""
+        """Copy the displayed array to the clipboard."""
         clipboard = QApplication.clipboard()
         clipboard.setText(self.text_edit.toPlainText())
 
-        # 显示复制成功提示
+        # Display confirmation of clipboard copying.
         self.show_copy_success()
 
     def show_copy_success(self):
-        """显示复制成功提示"""
+        """Temporarily display confirmation that copying succeeded."""
         success_label = QLabel("✓ 已复制到剪贴板！")
         success_label.setStyleSheet("color: green; font-weight: bold;")
         success_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # 临时显示提示
+        # Show a temporary confirmation.
         layout = self.layout()
-        layout.insertWidget(layout.count() - 1, success_label)  # 在按钮前插入
+        layout.insertWidget(layout.count() - 1, success_label)  # Insert the message before the button.
 
-        # 3秒后移除提示
+        # Remove the confirmation after 3 seconds.
         QTimer.singleShot(3000, success_label.deleteLater)
 
 
 class Process:
-    """流程类，封装流程信息"""
+    """Store one legacy process operation and its parameters."""
 
     def __init__(self, name, parameters=None):
+        """Initialize process dependencies and internal state."""
         self.name = name
-        self.parameters = parameters or {}  # 存储流程参数
+        self.parameters = parameters or {}  # Store process parameters.
 
     def __str__(self):
+        """Str."""
         if self.parameters:
             params_str = ", ".join([f"{k}: {v}" for k, v in self.parameters.items()])
             return f"{self.name} ({params_str})"
@@ -127,34 +130,37 @@ class Process:
 
 
 class Task:
-    """任务类，包含多个流程和任务执行次数"""
+    """Group legacy processes with an execution repetition count."""
 
     def __init__(self, name, processes=None, execution_count=1, completed_count=0):
+        """Initialize task dependencies and internal state."""
         self.name = name
         self.processes = processes or []
         self.execution_count = execution_count
-        self.completed_count = completed_count  # 已完成次数
+        self.completed_count = completed_count  # Completed repetition count.
 
     def add_process(self, process):
+        """Add process."""
         self.processes.append(process)
 
     @property
     def remaining_count(self):
-        """计算剩余次数"""
+        """Return the number of task repetitions still required."""
         return max(0, self.execution_count - self.completed_count)
 
 
 class SpinCoatingDialog(QDialog):
-    """旋涂参数设置对话框"""
+    """Collect and validate spin coating parameters in a dialog."""
 
     def __init__(self, parent=None):
+        """Initialize spin coating dialog dependencies and internal state."""
         super().__init__(parent)
         self.setWindowTitle("设置旋涂参数")
         self.setFixedSize(400, 300)
 
         layout = QVBoxLayout(self)
 
-        # 标题
+        # Title.
         title_label = QLabel("旋涂参数设置")
         title_font = QFont()
         title_font.setPointSize(14)
@@ -163,11 +169,11 @@ class SpinCoatingDialog(QDialog):
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
-        # 参数输入区域
+        # Parameter input area.
         params_layout = QGridLayout()
         params_layout.setSpacing(15)
 
-        # 最大速度设置
+        # Maximum speed setting.
         max_speed_label = QLabel("最大速度 (rpm):")
         max_speed_label.setFont(QFont("Microsoft YaHei", 11))
         self.max_speed_spin = QDoubleSpinBox()
@@ -178,7 +184,7 @@ class SpinCoatingDialog(QDialog):
         params_layout.addWidget(max_speed_label, 0, 0)
         params_layout.addWidget(self.max_speed_spin, 0, 1)
 
-        # 旋涂时间设置
+        # Spin duration setting.
         spin_time_label = QLabel("旋涂时间 (s):")
         spin_time_label.setFont(QFont("Microsoft YaHei", 11))
         self.spin_time_spin = QDoubleSpinBox()
@@ -189,7 +195,7 @@ class SpinCoatingDialog(QDialog):
         params_layout.addWidget(spin_time_label, 1, 0)
         params_layout.addWidget(self.spin_time_spin, 1, 1)
 
-        # 加速时间设置
+        # Acceleration time setting.
         accel_time_label = QLabel("加速时间 (s):")
         accel_time_label.setFont(QFont("Microsoft YaHei", 11))
         self.accel_time_spin = QDoubleSpinBox()
@@ -200,7 +206,7 @@ class SpinCoatingDialog(QDialog):
         params_layout.addWidget(accel_time_label, 2, 0)
         params_layout.addWidget(self.accel_time_spin, 2, 1)
 
-        # 减速时间设置
+        # Deceleration time setting.
         decel_time_label = QLabel("减速时间 (s):")
         decel_time_label.setFont(QFont("Microsoft YaHei", 11))
         self.decel_time_spin = QDoubleSpinBox()
@@ -213,14 +219,14 @@ class SpinCoatingDialog(QDialog):
 
         layout.addLayout(params_layout)
 
-        # 按钮区域
+        # Button area.
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
 
     def get_parameters(self):
-        """获取设置的参数"""
+        """Return the parameters currently entered in the dialog."""
         return {
             "最大速度": self.max_speed_spin.value(),
             "旋涂时间": self.spin_time_spin.value(),
@@ -230,9 +236,10 @@ class SpinCoatingDialog(QDialog):
 
 
 class CountEditDialog(QDialog):
-    """执行次数编辑对话框"""
+    """Edit a task repetition count."""
 
     def __init__(self, task_name, current_count=1, is_new_selection=False, parent=None):
+        """Initialize count edit dialog dependencies and internal state."""
         super().__init__(parent)
 
         if is_new_selection:
@@ -246,14 +253,14 @@ class CountEditDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        # 提示标签
+        # Hint label.
         label = QLabel(prompt)
         label_font = QFont()
         label_font.setPointSize(12)
         label.setFont(label_font)
         layout.addWidget(label)
 
-        # 输入框
+        # Input field.
         input_layout = QHBoxLayout()
         input_label = QLabel("执行次数:")
         input_label.setFont(QFont("Microsoft YaHei", 12))
@@ -269,7 +276,7 @@ class CountEditDialog(QDialog):
 
         layout.addLayout(input_layout)
 
-        # 按钮
+        # Buttons.
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         button_box.accepted.connect(self.validate_and_accept)
         button_box.rejected.connect(self.reject)
@@ -278,7 +285,7 @@ class CountEditDialog(QDialog):
         self.result_count = current_count
 
     def validate_and_accept(self):
-        """验证输入并接受"""
+        """Validate input fields and accept the dialog on success."""
         try:
             text = self.count_edit.text().strip()
             if text:
@@ -294,53 +301,55 @@ class CountEditDialog(QDialog):
             QMessageBox.warning(self, "输入错误", "请输入有效的数字")
 
     def get_count(self):
+        """Get count."""
         return self.result_count
 
 
 class TaskDetailWindow(QMainWindow):
-    """任务详情窗口"""
+    """Display and edit the processes belonging to a task."""
 
     def __init__(self, task, parent=None):
+        """Initialize task detail window dependencies and internal state."""
         super().__init__(parent)
         self.task = task
         self.setWindowTitle(f"任务详情 - {task.name}")
-        # 增大窗口尺寸确保所有内容都能完整显示
+        # Enlarge the window so all content is visible.
         self.setFixedSize(900, 750)
 
-        # 设置样式
+        # Apply the style.
         self.setup_style()
 
-        # 创建中央部件
+        # Create the central widget.
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        # 创建主布局
+        # Create the main layout.
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(12)
 
-        # 标题栏
+        # Title bar.
         title_bar = self.create_title_bar()
         main_layout.addWidget(title_bar)
 
-        # 任务信息
+        # Task information.
         task_info = self.create_task_info()
         main_layout.addWidget(task_info)
 
-        # 流程列表 - 给予更多空间
+        # Give the process list more space.
         process_list = self.create_process_list()
-        main_layout.addWidget(process_list, 1)  # 添加权重1，使其可以扩展
+        main_layout.addWidget(process_list, 1)  # Use stretch weight 1 so the area can expand.
 
-        # 操作按钮区域
+        # Operation button area.
         operation_buttons = self.create_operation_buttons()
         main_layout.addWidget(operation_buttons)
 
-        # 底部按钮
+        # Bottom buttons.
         bottom_buttons = self.create_bottom_buttons()
         main_layout.addWidget(bottom_buttons)
 
     def setup_style(self):
-        """设置样式"""
+        """Apply the widget styles used by this window."""
         self.setStyleSheet("""
             QMainWindow {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
@@ -379,7 +388,7 @@ class TaskDetailWindow(QMainWindow):
         """)
 
     def create_title_bar(self):
-        """创建标题栏"""
+        """Build the title bar and its controls."""
         title_bar = QWidget()
         title_bar.setFixedHeight(45)
         title_bar.setStyleSheet("background-color: rgba(0, 0, 0, 0.3); border-radius: 6px;")
@@ -399,7 +408,7 @@ class TaskDetailWindow(QMainWindow):
         return title_bar
 
     def create_task_info(self):
-        """创建任务信息显示"""
+        """Build the task information display."""
         info_widget = QWidget()
         info_layout = QVBoxLayout(info_widget)
 
@@ -413,12 +422,12 @@ class TaskDetailWindow(QMainWindow):
         return info_widget
 
     def create_process_list(self):
-        """创建流程列表 - 使用和工作任务列表相同的样式"""
+        """Build the process list using the work-task list style."""
         list_widget = QWidget()
         layout = QVBoxLayout(list_widget)
         layout.setSpacing(6)
 
-        # 标题
+        # Title.
         title = QLabel("任务流程列表")
         title_font = QFont()
         title_font.setPointSize(14)
@@ -426,17 +435,17 @@ class TaskDetailWindow(QMainWindow):
         title.setFont(title_font)
         title.setStyleSheet("color: white;")
 
-        # 流程列表 - 增加高度确保能显示更多项目
+        # Increase the process-list height to show more items.
         self.process_list = QListWidget()
-        # 使用固定高度而不是最小/最大高度，确保显示完整
+        # Use a fixed height to keep the complete list area visible.
         self.process_list.setFixedHeight(400)
 
-        # 启用拖拽排序和滚动条 - 和工作任务列表保持一致
+        # Enable drag reordering and scrolling consistently with the work-task list.
         self.process_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self.process_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.process_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
-        # 添加上下文菜单
+        # Add a context menu.
         self.process_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.process_list.customContextMenuRequested.connect(self.show_process_context_menu)
 
@@ -448,7 +457,7 @@ class TaskDetailWindow(QMainWindow):
         return list_widget
 
     def show_process_context_menu(self, position):
-        """显示流程上下文菜单"""
+        """Show the context menu for the selected process."""
         item = self.process_list.itemAt(position)
         if item:
             menu = QMenu(self)
@@ -460,7 +469,7 @@ class TaskDetailWindow(QMainWindow):
                 self.delete_process(item)
 
     def delete_process(self, item):
-        """删除选中的流程"""
+        """Remove the selected process from the task."""
         index = self.process_list.row(item)
         if 0 <= index < len(self.task.processes):
             process_name = self.task.processes[index].name
@@ -473,12 +482,12 @@ class TaskDetailWindow(QMainWindow):
                 QMessageBox.information(self, "成功", f"已删除流程: {process_name}")
 
     def create_operation_buttons(self):
-        """创建操作按钮区域"""
+        """Build the process operation buttons."""
         button_widget = QWidget()
         layout = QVBoxLayout(button_widget)
         layout.setSpacing(8)
 
-        # 标题
+        # Title.
         title = QLabel("全部操作")
         title_font = QFont()
         title_font.setPointSize(14)
@@ -487,13 +496,13 @@ class TaskDetailWindow(QMainWindow):
         title.setStyleSheet("color: white;")
         layout.addWidget(title)
 
-        # 操作按钮
+        # Operation buttons.
         button_container = QWidget()
         button_layout = QHBoxLayout(button_container)
         button_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         button_layout.setSpacing(15)
 
-        # 四个预设操作按钮
+        # Four preset operation buttons.
         operations = [
             ("加热", self.add_heating),
             ("旋涂", self.add_spin_coating),
@@ -512,13 +521,13 @@ class TaskDetailWindow(QMainWindow):
         return button_widget
 
     def create_bottom_buttons(self):
-        """创建底部按钮"""
+        """Build the bottom navigation buttons."""
         button_widget = QWidget()
         layout = QHBoxLayout(button_widget)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(20)
 
-        # 返回按钮
+        # Back button.
         back_button = QPushButton("返回")
         back_button.setObjectName("backButton")
         back_button.setFixedSize(120, 35)
@@ -528,104 +537,106 @@ class TaskDetailWindow(QMainWindow):
         return button_widget
 
     def update_process_list(self):
-        """更新流程列表显示 - 使用和工作任务列表相同的项目样式"""
+        """Refresh process items using the work-task list style."""
         self.process_list.clear()
 
         if not self.task.processes:
-            # 如果没有流程，显示提示信息
+            # Show a hint when no processes are present.
             item = QListWidgetItem("暂无流程，请点击下方操作按钮添加流程")
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             item.setForeground(QColor(128, 128, 128))
             self.process_list.addItem(item)
         else:
-            # 显示所有流程 - 使用和工作任务列表相同的项目样式
+            # Display processes with the same item style as the work-task list.
             for i, process in enumerate(self.task.processes):
                 item_text = f"{i + 1}. {process}"
                 item = QListWidgetItem(item_text)
                 self.process_list.addItem(item)
 
     def add_heating(self):
-        """添加加热操作"""
+        """Append a heating operation to the task."""
         self.add_operation_to_task("加热")
 
     def add_spin_coating(self):
-        """添加旋涂操作"""
-        # 弹出参数设置对话框
+        """Collect spin parameters and append a spin coating operation."""
+        # Open the parameter dialog.
         dialog = SpinCoatingDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             parameters = dialog.get_parameters()
-            # 创建带有参数的流程
+            # Create a parameterized process.
             new_process = Process("旋涂", parameters)
             self.task.add_process(new_process)
 
-            # 更新显示
+            # Refresh the display.
             self.update_process_list()
 
-            # 显示成功消息
+            # Show a success message.
             QMessageBox.information(self, "成功", f"已添加旋涂操作，参数: {parameters}")
 
     def add_vacuum(self):
-        """添加抽真空操作"""
+        """Append a vacuum operation to the task."""
         self.add_operation_to_task("抽真空")
 
     def add_dripping(self):
-        """添加滴液操作"""
+        """Append a dispensing operation to the task."""
         self.add_operation_to_task("滴液")
 
     def add_operation_to_task(self, operation_name):
-        """添加操作到任务（无参数的操作）"""
-        # 创建新的流程
+        """Append an operation that requires no additional parameters."""
+        # Create a new process.
         new_process = Process(operation_name)
         self.task.add_process(new_process)
 
-        # 更新显示
+        # Refresh the display.
         self.update_process_list()
 
-        # 显示成功消息
+        # Show a success message.
         QMessageBox.information(self, "成功", f"已添加操作: {operation_name}")
 
 
 class MainWindow(QMainWindow):
+    """Represent main window and its associated operations."""
     def __init__(self):
+        """Initialize main window dependencies and internal state."""
         super().__init__()
         self.setWindowTitle("钙钛矿太阳能电池自动生产平台")
-        self.setFixedSize(1000, 800)  # 增大主窗口尺寸
+        self.setFixedSize(1000, 800)  # Enlarge the main window.
 
-        # 初始化空的任务数据
+        # Initialize an empty task collection.
         self.all_tasks = []
         self.selected_tasks = []
 
-        # 设置样式
+        # Apply the style.
         self.setup_style()
 
-        # 创建中央部件
+        # Create the central widget.
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        # 创建主布局
+        # Create the main layout.
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15)
 
-        # 创建堆叠窗口
+        # Create the stacked widget.
         self.stacked_widget = QStackedWidget()
 
-        # 创建欢迎页面
+        # Create the welcome page.
         self.welcome_page = self.create_welcome_page()
-        # 创建主页面
+        # Create the main page.
         self.main_page = self.create_main_page()
 
-        # 添加页面到堆叠窗口
+        # Add pages to the stacked widget.
         self.stacked_widget.addWidget(self.welcome_page)
         self.stacked_widget.addWidget(self.main_page)
 
         main_layout.addWidget(self.stacked_widget)
 
-        # 存储导出数据的变量
+        # Store the exported data.
         self.exported_data = None
 
     def setup_style(self):
-        """设置应用程序样式"""
+        """Apply the widget styles used by this window."""
         self.setStyleSheet("""
             QMainWindow {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
@@ -692,12 +703,12 @@ class MainWindow(QMainWindow):
         """)
 
     def create_welcome_page(self):
-        """创建欢迎页面"""
+        """Build the welcome page."""
         welcome_widget = QWidget()
         layout = QVBoxLayout(welcome_widget)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # 标题标签
+        # Title label.
         title_label = QLabel("钙钛矿太阳能电池自动生产平台")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_font = QFont()
@@ -706,19 +717,19 @@ class MainWindow(QMainWindow):
         title_label.setFont(title_font)
         title_label.setStyleSheet("color: white; margin-bottom: 50px;")
 
-        # 按钮容器
+        # Button container.
         button_container = QWidget()
         button_layout = QHBoxLayout(button_container)
         button_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         button_layout.setSpacing(30)
 
-        # 进入按钮
+        # Enter button.
         enter_button = QPushButton("进入系统")
         enter_button.setObjectName("enterButton")
         enter_button.setFixedSize(120, 50)
         enter_button.clicked.connect(self.enter_system)
 
-        # 退出按钮
+        # Exit button.
         exit_button = QPushButton("退出")
         exit_button.setObjectName("exitButton")
         exit_button.setFixedSize(120, 50)
@@ -727,7 +738,7 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(enter_button)
         button_layout.addWidget(exit_button)
 
-        # 添加到主布局
+        # Add to the main layout.
         layout.addWidget(title_label)
         layout.addStretch()
         layout.addWidget(button_container)
@@ -736,17 +747,17 @@ class MainWindow(QMainWindow):
         return welcome_widget
 
     def create_main_page(self):
-        """创建主系统页面"""
+        """Build the main task-management page."""
         main_widget = QWidget()
         layout = QVBoxLayout(main_widget)
         layout.setSpacing(15)
         layout.setContentsMargins(15, 15, 15, 15)
 
-        # 标题栏
+        # Title bar.
         title_bar = self.create_title_bar()
         layout.addWidget(title_bar)
 
-        # 任务列表标题
+        # Task-list title.
         task_title = QLabel("任务列表")
         task_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         task_title_font = QFont()
@@ -756,19 +767,19 @@ class MainWindow(QMainWindow):
         task_title.setStyleSheet("color: white; padding: 10px;")
         layout.addWidget(task_title)
 
-        # 使用简单的垂直布局
+        # Use a simple vertical layout.
         content_layout = QVBoxLayout()
         content_layout.setSpacing(15)
 
-        # 工作任务显示区域
+        # Work-task display area.
         selected_tasks_section = self.create_selected_tasks_section()
         content_layout.addWidget(selected_tasks_section)
 
-        # 全部任务区域
+        # All-task area.
         all_tasks_section = self.create_all_tasks_section()
         content_layout.addWidget(all_tasks_section)
 
-        # 操作按钮
+        # Operation buttons.
         action_buttons = self.create_action_buttons()
         content_layout.addWidget(action_buttons)
 
@@ -777,7 +788,7 @@ class MainWindow(QMainWindow):
         return main_widget
 
     def create_title_bar(self):
-        """创建标题栏"""
+        """Build the title bar and its controls."""
         title_bar = QWidget()
         title_bar.setFixedHeight(50)
         title_bar.setStyleSheet("background-color: rgba(0, 0, 0, 0.3); border-radius: 6px;")
@@ -791,7 +802,7 @@ class MainWindow(QMainWindow):
         title_label.setFont(title_font)
         title_label.setStyleSheet("color: white;")
 
-        # 添加导出数据按钮
+        # Add a data export button.
         export_button = QPushButton("导出旋涂参数")
         export_button.setFixedSize(120, 35)
         export_button.clicked.connect(self.export_spin_coating_data)
@@ -808,12 +819,12 @@ class MainWindow(QMainWindow):
         return title_bar
 
     def create_selected_tasks_section(self):
-        """创建选中的工作任务区域"""
+        """Build the selected work-task area."""
         section_widget = QWidget()
         layout = QVBoxLayout(section_widget)
         layout.setSpacing(8)
 
-        # 标题
+        # Title.
         title = QLabel("工作任务列表（双击任务修改执行次数）")
         title_font = QFont()
         title_font.setPointSize(14)
@@ -821,16 +832,16 @@ class MainWindow(QMainWindow):
         title.setFont(title_font)
         title.setStyleSheet("color: white;")
 
-        # 选中的任务列表 - 使用固定高度确保显示完整
+        # Give the selected-task list a fixed height to keep its area visible.
         self.selected_tasks_list = QListWidget()
         self.selected_tasks_list.setFixedHeight(280)
 
-        # 启用拖拽排序和滚动条
+        # Enable drag reordering and scrolling.
         self.selected_tasks_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self.selected_tasks_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.selected_tasks_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
-        # 连接双击事件
+        # Connect the double-click event.
         self.selected_tasks_list.itemDoubleClicked.connect(self.on_task_double_clicked)
 
         layout.addWidget(title)
@@ -839,12 +850,12 @@ class MainWindow(QMainWindow):
         return section_widget
 
     def create_all_tasks_section(self):
-        """创建全部任务区域"""
+        """Build the available-task area."""
         section_widget = QWidget()
         layout = QVBoxLayout(section_widget)
         layout.setSpacing(8)
 
-        # 标题
+        # Title.
         title = QLabel("全部可用任务（右键点击查看详情，左键点击选择并设置执行次数）")
         title_font = QFont()
         title_font.setPointSize(14)
@@ -852,20 +863,20 @@ class MainWindow(QMainWindow):
         title.setFont(title_font)
         title.setStyleSheet("color: white;")
 
-        # 全部任务列表 - 使用固定高度确保显示完整
+        # Give the all-task list a fixed height to keep its area visible.
         self.all_tasks_list = QListWidget()
         self.all_tasks_list.setFixedHeight(220)
         self.update_all_tasks_list()
 
-        # 启用拖拽排序和滚动条
+        # Enable drag reordering and scrolling.
         self.all_tasks_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self.all_tasks_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.all_tasks_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
-        # 连接点击事件
+        # Connect the click event.
         self.all_tasks_list.itemClicked.connect(self.on_task_selected)
 
-        # 添加上下文菜单（右键菜单）
+        # Add a right-click context menu.
         self.all_tasks_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.all_tasks_list.customContextMenuRequested.connect(self.show_task_context_menu)
 
@@ -875,32 +886,32 @@ class MainWindow(QMainWindow):
         return section_widget
 
     def create_action_buttons(self):
-        """创建操作按钮区域"""
+        """Build task creation, deletion, completion, and reset buttons."""
         button_widget = QWidget()
         layout = QHBoxLayout(button_widget)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(20)
 
-        # 新建任务按钮
+        # New-task button.
         add_button = QPushButton("新建任务")
         add_button.setObjectName("addButton")
         add_button.setFixedSize(120, 40)
         add_button.clicked.connect(self.add_new_task)
 
-        # 删除任务按钮
+        # Delete-task button.
         delete_button = QPushButton("删除任务")
         delete_button.setObjectName("deleteButton")
         delete_button.setFixedSize(120, 40)
         delete_button.clicked.connect(self.delete_task)
 
-        # 完成任务按钮
+        # Complete-task button.
         complete_button = QPushButton("标记完成")
         complete_button.setObjectName("completeButton")
         complete_button.setFixedSize(120, 40)
         complete_button.clicked.connect(self.mark_task_complete)
         complete_button.setStyleSheet("background-color: #9b59b6;")
 
-        # 重置完成按钮
+        # Reset-completion button.
         reset_button = QPushButton("重置完成")
         reset_button.setObjectName("resetButton")
         reset_button.setFixedSize(120, 40)
@@ -915,18 +926,18 @@ class MainWindow(QMainWindow):
         return button_widget
 
     def show_task_context_menu(self, position):
-        """显示任务上下文菜单（右键菜单）"""
+        """Show the right-click menu for a task."""
         item = self.all_tasks_list.itemAt(position)
         if item:
             task_name = item.text()
 
-            # 找到对应的任务
+            # Find the corresponding task.
             for task in self.all_tasks:
                 if task.name == task_name:
                     menu = QMenu(self)
                     detail_action = menu.addAction("查看任务详情")
 
-                    # 显示菜单并获取选择
+                    # Display the menu and read the selection.
                     action = menu.exec(self.all_tasks_list.mapToGlobal(position))
 
                     if action == detail_action:
@@ -934,24 +945,24 @@ class MainWindow(QMainWindow):
                     break
 
     def show_task_detail(self, task):
-        """显示任务详情窗口"""
+        """Open the selected task detail window."""
         self.detail_window = TaskDetailWindow(task, self)
         self.detail_window.show()
 
     def on_task_selected(self, item):
-        """当任务被选中时的处理 - 选择时设置执行次数"""
+        """Add a selected task after obtaining its repetition count."""
         if item:
             task_name = item.text()
 
-            # 找到对应的任务
+            # Find the corresponding task.
             for task in self.all_tasks:
                 if task.name == task_name:
-                    # 弹出对话框设置执行次数
+                    # Open a dialog to set the repetition count.
                     dialog = CountEditDialog(task.name, is_new_selection=True, parent=self)
                     if dialog.exec() == QDialog.DialogCode.Accepted:
                         execution_count = dialog.get_count()
 
-                        # 创建任务副本（因为允许重复选择）
+                        # Copy the task because repeated selection is allowed.
                         new_task = Task(
                             name=task.name,
                             processes=task.processes.copy(),
@@ -959,21 +970,21 @@ class MainWindow(QMainWindow):
                             completed_count=0
                         )
 
-                        # 添加到选中列表
+                        # Add to the selected list.
                         self.selected_tasks.append(new_task)
                         self.update_selected_tasks_display()
                         QMessageBox.information(self, "成功", f"已添加任务 '{task_name}'，执行次数: {execution_count}")
                     break
 
     def on_task_double_clicked(self, item):
-        """当工作任务被双击时，修改执行次数"""
+        """Edit the repetition count of a double-clicked work task."""
         if item:
-            # 获取双击的任务在工作列表中的索引
+            # Find the double-clicked task index in the work list.
             index = self.selected_tasks_list.row(item)
             if 0 <= index < len(self.selected_tasks):
                 task = self.selected_tasks[index]
 
-                # 使用自定义对话框
+                # Use the custom dialog.
                 dialog = CountEditDialog(task.name, task.execution_count, is_new_selection=False, parent=self)
                 if dialog.exec() == QDialog.DialogCode.Accepted:
                     new_count = dialog.get_count()
@@ -982,7 +993,7 @@ class MainWindow(QMainWindow):
                     QMessageBox.information(self, "成功", f"已将任务 '{task.name}' 的执行次数修改为 {new_count}")
 
     def mark_task_complete(self):
-        """标记选中任务完成一次"""
+        """Mark one repetition of the selected task as completed."""
         current_item = self.selected_tasks_list.currentItem()
         if current_item:
             index = self.selected_tasks_list.row(current_item)
@@ -1003,7 +1014,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "警告", "请先在工作列表中选择一个任务")
 
     def reset_task_completion(self):
-        """重置选中任务的完成次数"""
+        """Reset the selected task completed repetition count."""
         current_item = self.selected_tasks_list.currentItem()
         if current_item:
             index = self.selected_tasks_list.row(current_item)
@@ -1016,41 +1027,41 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "警告", "请先在工作列表中选择一个任务")
 
     def update_all_tasks_list(self):
-        """更新全部任务列表"""
+        """Refresh the list of available tasks."""
         self.all_tasks_list.clear()
         for task in self.all_tasks:
             item = QListWidgetItem(task.name)
             self.all_tasks_list.addItem(item)
 
     def update_selected_tasks_display(self):
-        """更新选中的任务显示"""
+        """Refresh selected tasks and their completion indicators."""
         self.selected_tasks_list.clear()
         for i, task in enumerate(self.selected_tasks):
-            # 显示任务名称、执行次数和剩余次数
+            # Display the task name, repetition count, and remaining count.
             status_text = f"剩余{task.remaining_count}次" if task.remaining_count > 0 else "已完成"
 
             item_text = f"{i + 1}. {task.name} → 执行: {task.execution_count}次, 完成: {task.completed_count}次, [{status_text}]"
             item = QListWidgetItem(item_text)
 
-            # 根据剩余次数设置颜色
+            # Choose a color based on the remaining count.
             if task.remaining_count == 0:
-                item.setBackground(QColor(200, 255, 200))  # 浅绿色 - 已完成
+                item.setBackground(QColor(200, 255, 200))  # Light green indicates completion.
             elif task.completed_count > 0:
-                item.setBackground(QColor(255, 255, 200))  # 浅黄色 - 进行中
+                item.setBackground(QColor(255, 255, 200))  # Light yellow indicates progress.
             else:
-                item.setBackground(QColor(255, 255, 255))  # 白色 - 未开始
+                item.setBackground(QColor(255, 255, 255))  # White indicates a task that has not started.
 
             self.selected_tasks_list.addItem(item)
 
     def add_new_task(self):
-        """新建任务"""
+        """Create an empty task with one requested repetition."""
         task_name, ok = QInputDialog.getText(self, "新建任务", "请输入任务名称:")
         if ok and task_name.strip():
             if any(task.name == task_name.strip() for task in self.all_tasks):
                 QMessageBox.warning(self, "警告", "任务名称已存在!")
                 return
 
-            # 创建新任务，默认执行次数为1，不添加默认流程
+            # Create a task with one repetition and no default processes.
             new_task = Task(task_name.strip(), execution_count=1)
 
             self.all_tasks.append(new_task)
@@ -1058,7 +1069,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "成功", f"任务 '{task_name}' 创建成功!")
 
     def delete_task(self):
-        """删除任务"""
+        """Remove a task and matching entries from the selected work list."""
         current_item = self.all_tasks_list.currentItem()
         if current_item:
             task_name = current_item.text()
@@ -1066,18 +1077,18 @@ class MainWindow(QMainWindow):
                                          f"确定要删除任务 '{task_name}' 吗？",
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes:
-                # 从数据中删除
+                # Remove from the data collection.
                 self.all_tasks = [task for task in self.all_tasks if task.name != task_name]
-                # 从选中任务中删除所有同名任务（因为允许重复）
+                # Remove every selected task with the same name; duplicates are allowed.
                 self.selected_tasks = [task for task in self.selected_tasks if task.name != task_name]
-                # 更新显示
+                # Refresh the display.
                 self.update_all_tasks_list()
                 self.update_selected_tasks_display()
         else:
             QMessageBox.warning(self, "警告", "请先选择一个要删除的任务")
 
     def export_spin_coating_data(self):
-        """导出旋涂参数数据"""
+        """Collect spin parameters and display the exported array."""
         spin_coating_data = self.get_spin_coating_parameters()
 
         if not spin_coating_data:
@@ -1085,36 +1096,31 @@ class MainWindow(QMainWindow):
             self.exported_data = None
             return None
 
-        # 显示数组对话框
+        # Display the array dialog.
         dialog = ArrayDisplayDialog(spin_coating_data, self)
         dialog.exec()
 
-        # 存储导出的数据
+        # Store the exported data.
         self.exported_data = spin_coating_data
 
-        # 在控制台打印数据
+        # Print data to the console.
         self.print_exported_data()
 
         return spin_coating_data
 
     def get_spin_coating_parameters(self):
-        """
-        获取工作列表中所有任务的旋涂参数
+        """Return spin parameters grouped by work task and spin operation.
 
-        返回值:
-            list: 一个列表，其中每个元素对应工作列表中的一个任务
-                  每个任务是一个列表，包含该任务中所有旋涂操作的参数
-                  每个旋涂操作的参数是按顺序的列表：[最大速度, 旋涂时间, 加速时间, 减速时间]
-        """
+        Each operation contains maximum speed, spin duration, acceleration time, and deceleration time, in that order."""
         spin_coating_data = []
 
         for task in self.selected_tasks:
             task_spin_operations = []
 
-            # 遍历任务中的所有流程
+            # Visit all processes in the task.
             for process in task.processes:
                 if process.name == "旋涂" and process.parameters:
-                    # 提取旋涂参数并按指定顺序排列
+                    # Extract spin parameters in the specified order.
                     params = process.parameters
                     spin_params = [
                         0,
@@ -1125,14 +1131,14 @@ class MainWindow(QMainWindow):
                     ]
                     task_spin_operations.append(spin_params)
 
-            # 如果这个任务有旋涂操作，就添加到结果中
+            # Add the task to the result if it contains a spin operation.
             if task_spin_operations:
                 spin_coating_data.append(task_spin_operations)
 
         return spin_coating_data
 
     def print_exported_data(self):
-        """打印导出的数据到控制台"""
+        """Print the most recently exported spin data to the console."""
         if self.exported_data:
             print("\n" + "=" * 60)
             print("导出的旋涂参数数组:")
@@ -1154,23 +1160,24 @@ class MainWindow(QMainWindow):
             print("没有导出的数据")
 
     def get_exported_data(self):
-        """获取最近导出的数据"""
+        """Return the most recently exported data."""
         return self.exported_data
 
     def enter_system(self):
-        """进入系统"""
+        """Switch from the welcome page to the task-management page."""
         self.stacked_widget.setCurrentIndex(1)
 
     def back_to_welcome(self):
-        """返回欢迎页面"""
+        """Switch back to the welcome page."""
         self.stacked_widget.setCurrentIndex(0)
 
     def close_application(self):
-        """关闭应用程序"""
+        """Close the application window."""
         self.close()
 
 
 def main():
+    """Run the ui command-line entry point."""
     app = QApplication(sys.argv)
 
     font = QFont("Microsoft YaHei", 10)
@@ -1180,8 +1187,9 @@ def main():
     window.show()
 
 
-    # 在程序退出时打印最终导出的数据
+    # Print the final exported data at application exit.
     def on_exit():
+        """On exit."""
         exported_data = window.get_exported_data()
         if exported_data:
             print("\n" + "=" * 60)
@@ -1192,7 +1200,7 @@ def main():
         else:
             print("程序结束：没有导出数据")
 
-    # 注册退出处理
+    # Register the exit handler.
     app.aboutToQuit.connect(on_exit)
 
     sys.exit(app.exec())

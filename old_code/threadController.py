@@ -3,28 +3,30 @@ import pandas as pd
 
 class threadController:
 
-    '''
-    相关参数：
-    第一步：把玻璃拿到旋涂仪上，取滴管，吸液，滴液，开始旋涂，然后放滴管，机械臂回到原点。动作开始于S_a，阻塞时间t_A1，非阻塞时间t_A2（这两个都是固定的）。
-    第二步：取滴管，吸液，滴液，然后放滴管，机械臂回到原点。动作开始于S_b，阻塞时间t_B1,非阻塞时间t_B2(检查是否对大于0)：第一阶段旋涂时间约束：(S_b + t_addSolution2) - (S_a + t_startSpin) = t_delay)
-    第三步：把玻璃片转移到加热台上。动作开始于S_h，阻塞时间t_H1，非阻塞时间t_H2。第二阶段旋涂时间约束：(S_h + t_pickGlassFromSpinCoater) - (S_a + t_startSpin) ~ t_spin 注意，t_spin不是spininfo里面的spinTime，而应该是旋涂仪运行的总时间
-    '''
+    """Coordinate the legacy three-phase spin and heating process.
 
-    t_startSpin = 46 # 从原点出发滴加第一步溶液直至开始旋涂
-    t_addSolution2 =  29 # 从lips出发到将第二步的溶液滴加到上面
+    Phase A loads the coater and dispenses the main solution at S_a, with blocking t_A1 and nonblocking t_A2.
+    Phase B dispenses the second solution at S_b, with blocking t_B1 and nonblocking t_B2; enforce
+    (S_b + t_addSolution2) - (S_a + t_startSpin) = t_delay. Phase H transfers the glass to the heater at S_h,
+    with blocking t_H1 and nonblocking t_H2. Enforce the total spin duration using
+    (S_h + t_pickGlassFromSpinCoater) - (S_a + t_startSpin), rather than a single spinInfo segment."""
+
+    t_startSpin = 46 # Start at the origin, dispense the first solution, and begin spinning.
+    t_addSolution2 =  29 # Start at the tip station and dispense the second solution.
     t_pickGlassFromSpinCoater = 1
-    t_A1 = 51 #第一段的阻塞时间：拿玻片 -> 放入旋涂仪 -> 吸主液 -> 滴加 -> 启动 -> 放下枪头 -> 回原点
-    t_B1 = 30 #第二段的阻塞时间：换吸头 -> 吸反溶剂 -> 滴加 -> 枪头升起来
-    t_H1 = 25 #第三段的阻塞时间：拿出旋涂仪里的玻璃 -> 放入加热台 -> 退枪头-> 回原点
-    t_T = 21 # 第四段的阻塞时间：从加热台拿下 -> 放回 Platform -> 回原点
-    cap_heater = 8  # 加热台最多放 4 块
+    t_A1 = 51 # First blocking phase: transfer glass to the coater, aspirate/dispense, start spinning, return the tip, return home.
+    t_B1 = 30 # Second blocking phase: change tip, aspirate antisolvent, dispense, and raise the pipette.
+    t_H1 = 25 # Third blocking phase: transfer glass to the heater, eject the tip, and return home.
+    t_T = 21 # Fourth blocking phase: retrieve glass from the heater, return it to the tray, and return home.
+    cap_heater = 8  # The heater holds at most 4 glasses.
 
     def plan_antiSolution(num_glasses, paramList):
+        """Plan anti solution."""
         model = cp_model.CpModel()
 
-        # 物理时间参数预设 (单位: 秒, 需根据你的实际硬件调整)
-        t_spin_max = 100  # 旋涂总时长最大值 (大于 t_delay + t_A2)
-        t_heat_max = 1200  # 加热台烘烤时间最大值
+        # Preset physical timings in seconds; calibrate them for the actual hardware.
+        t_spin_max = 100  # Maximum total spin time must exceed t_delay + t_A2.
+        t_heat_max = 1200  # Maximum heating duration.
 
         horizon = num_glasses * (
                     threadController.t_A1 + t_spin_max + threadController.t_H1 + t_heat_max + threadController.t_T)
@@ -36,13 +38,13 @@ class threadController:
         heat_demands = []
 
         for i in range(num_glasses):
-            t_delay = paramList[i]['t_delay']  # 旋涂t_delay s后滴加反溶剂
-            t_spin = paramList[i]['t_spin']  # 总共旋涂t_spin s
-            t_heat = paramList[i]['t_heat']  # 加热时间
-            t_win = paramList[i]['t_win']  # 旋涂后多少秒内把玻璃转移
-            t_wait_heat = paramList[i]['t_wait_heat']  # 新增：加热完成后最多等待多少秒必须下料
+            t_delay = paramList[i]['t_delay']  # Dispense antisolvent after t_delay seconds of spinning.
+            t_spin = paramList[i]['t_spin']  # Total spin duration is t_spin seconds.
+            t_heat = paramList[i]['t_heat']  # Heating duration.
+            t_win = paramList[i]['t_win']  # Allowed transfer window after spinning.
+            t_wait_heat = paramList[i]['t_wait_heat']  # Maximum permitted wait before pickup after heating completes.
 
-            # 1. 定义机械臂的四个动作时间区间
+            # 1. Define the four arm-action intervals.
             S_A = model.NewIntVar(0, horizon, f'S_A_{i}')
             E_A = model.NewIntVar(0, horizon, f'E_A_{i}')
             I_A = model.NewIntervalVar(S_A, threadController.t_A1, E_A, f'I_A_{i}')
@@ -61,47 +63,47 @@ class threadController:
 
             arm_intervals.extend([I_A, I_B, I_H, I_T])
 
-            # 2. 强物理时序与工艺时间窗约束
-            # A2 (反溶剂) 必须严格在 A1 结束后 t_delay 秒开始
+            # 2. Enforce physical ordering and process time windows.
+            # A2 (antisolvent) must start exactly t_delay seconds after A1 ends.
             model.Add(S_B + threadController.t_addSolution2 - (S_A + threadController.t_startSpin) == t_delay)  # limit1
 
-            # C (转移) 必须在旋涂结束后 t_win 秒内开始
+            # C (transfer) must start within t_win seconds after spinning finishes.
             model.Add(S_H + threadController.t_pickGlassFromSpinCoater - (S_A + threadController.t_startSpin) >= t_spin)
             model.Add(S_H + threadController.t_pickGlassFromSpinCoater - (
                         S_A + threadController.t_startSpin) <= t_spin + t_win)
 
-            # E (下料) 必须在加热完成后开始
+            # E (pickup) must start after heating finishes.
             model.Add(S_T >= E_H + t_heat)
 
-            # ========== 新约束：加热完成后最多等待 t_wait_heat 秒内必须发起下料 ==========
+            # Require pickup to start within t_wait_heat seconds after heating finishes.
             model.Add(S_T <= E_H + t_heat + t_wait_heat)
 
-            # 3. 旋涂仪占用区间 (从 A1 开始，直到 C 结束，玻璃才真正离开)
+            # 3. Spin coater occupancy lasts from A1 start to C end, when the glass has left.
             spin_occ_size = model.NewIntVar(t_spin, horizon, f'spin_occ_size_{i}')
             model.Add(spin_occ_size == E_H - S_A)
             I_spin = model.NewIntervalVar(S_A, spin_occ_size, E_H, f'I_spin_{i}')
             spin_intervals.append(I_spin)
 
-            # 4. 加热台占用区间 (从 S_H 开始算占用，物理上此时机械臂已开始把玻璃往加热台上放)
+            # 4. Reserve heater occupancy from S_H, when transfer toward the heater starts.
             heat_occ_size = model.NewIntVar(t_heat + threadController.t_H1, horizon, f'heat_occ_size_{i}')
-            model.Add(heat_occ_size == S_T - S_H)  # 覆盖从放玻璃到取玻璃的全过程
+            model.Add(heat_occ_size == S_T - S_H)  # Cover the complete placement-to-pickup interval.
             I_heat = model.NewIntervalVar(S_H, heat_occ_size, S_T, f'I_heat_{i}')
             heat_intervals.append(I_heat)
             heat_demands.append(1)
 
-            # 将所有核心时间戳收集到字典里，方便后期提取
+            # Collect key timestamps in a dictionary for later inspection.
             jobs[i] = {'S_A': S_A, 'S_B': S_B, 'S_H': S_H, 'S_T': S_T, 'E_T': E_T, 'glass_id' : paramList[i]['glass_id']}
 
-        # 5. 添加全局互斥与资源约束
-        model.AddNoOverlap(arm_intervals)  # 机械臂互斥
-        model.AddNoOverlap(spin_intervals)  # 旋涂仪互斥
-        model.AddCumulative(heat_intervals, heat_demands, threadController.cap_heater)  # 加热台容量
+        # 5. Add global mutual-exclusion and resource constraints.
+        model.AddNoOverlap(arm_intervals)  # Arm mutual exclusion.
+        model.AddNoOverlap(spin_intervals)  # Spin coater mutual exclusion.
+        model.AddCumulative(heat_intervals, heat_demands, threadController.cap_heater)  # Heater capacity.
 
-        # 6. 顺序约束 (强制让 1号比 2号先做，避免相同解的对称性导致求解慢)
+        # 6. Order glass 1 before glass 2 to break equivalent-solution symmetry.
         for i in range(num_glasses - 1):
             model.Add(jobs[i]['S_A'] < jobs[i + 1]['S_A'])
 
-        # 目标：最小化最大完成时间 Makespan
+        # Minimize the maximum completion time (makespan).
         makespan = model.NewIntVar(0, horizon, 'makespan')
         model.AddMaxEquality(makespan, [jobs[i]['E_T'] for i in range(num_glasses)])
         model.Minimize(makespan)
@@ -112,7 +114,7 @@ class threadController:
         timeline = []
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
             for i in range(num_glasses):
-                # 通过 jobs 字典安全提取每个步骤的具体发生时间
+                # Read individual step timestamps from the jobs dictionary.
                 timeline.append({"time": solver.Value(jobs[i]['S_A']), "glass_id": jobs[i]['glass_id'], "action": "Task_A",
                                  "desc": "上料与主液旋涂"})
                 timeline.append(
@@ -128,12 +130,12 @@ class threadController:
             raise Exception("无法找到满足工艺时序的调度方案！")
 
     def plan_noAntiSolution(num_glasses, paramList):
-        """不含反溶剂的调度：A(上料旋涂) -> H(移入加热台) -> 加热 -> T(下料归位)"""
+        """Schedule loading/spinning A, heater transfer H, heating, and tray return T without antisolvent."""
         model = cp_model.CpModel()
 
-        # 物理时间参数预设 (单位: 秒, 需根据实际硬件调整)
-        t_spin_max = 1000  # 旋涂总时长最大值
-        t_heat_max = 12000  # 加热台烘烤时间最大值
+        # Preset physical timings in seconds; calibrate them for the actual hardware.
+        t_spin_max = 1000  # Maximum total spin duration.
+        t_heat_max = 12000  # Maximum heating duration.
 
         horizon = num_glasses * (
                     threadController.t_A1 + t_spin_max + threadController.t_H1 + t_heat_max + threadController.t_T)
@@ -145,12 +147,12 @@ class threadController:
         heat_demands = []
 
         for i in range(num_glasses):
-            t_spin = paramList[i]['t_spin']  # 旋涂总时间
-            t_heat = paramList[i]['t_heat']  # 加热时间
-            t_win = paramList[i]['t_win']  # 旋涂结束后必须移入加热台的窗口时间
-            t_wait_heat = paramList[i]['t_wait_heat']  # 加热结束后必须下料的最大等待时间
+            t_spin = paramList[i]['t_spin']  # Total spin duration.
+            t_heat = paramList[i]['t_heat']  # Heating duration.
+            t_win = paramList[i]['t_win']  # Allowed transfer window from spin completion to heating.
+            t_wait_heat = paramList[i]['t_wait_heat']  # Maximum pickup wait after heating completes.
 
-            # 1. 定义机械臂的三个动作区间 (A, H, T)
+            # 1. Define the three arm-action intervals A, H, and T.
             S_A = model.NewIntVar(0, horizon, f'S_A_{i}')
             E_A = model.NewIntVar(0, horizon, f'E_A_{i}')
             I_A = model.NewIntervalVar(S_A, threadController.t_A1, E_A, f'I_A_{i}')
@@ -165,47 +167,47 @@ class threadController:
 
             arm_intervals.extend([I_A, I_H, I_T])
 
-            # 2. 工艺时序约束
-            # 移入加热台必须在旋涂结束后 t_win 秒内开始
+            # 2. Enforce process ordering.
+            # Transfer to the heater must start within t_win seconds after spinning finishes.
             model.Add(S_H + threadController.t_pickGlassFromSpinCoater - (S_A + threadController.t_startSpin) >= t_spin)
             model.Add(S_H + threadController.t_pickGlassFromSpinCoater - (
                         S_A + threadController.t_startSpin) <= t_spin + t_win)
 
-            # 下料必须在加热完成后立即开始（不允许提前），且不能超过 t_wait_heat 延迟
+            # Pickup cannot precede heating completion and must respect t_wait_heat.
             model.Add(S_T >= E_H + t_heat)
             model.Add(S_T <= E_H + t_heat + t_wait_heat)
 
-            # 3. 旋涂仪占用区间 (从 A 开始，直到 H 结束，玻璃才离开)
+            # 3. Spin coater occupancy lasts from A start to H end, when the glass has left.
             spin_occ_size = model.NewIntVar(t_spin, horizon, f'spin_occ_size_{i}')
             model.Add(spin_occ_size == E_H - S_A)
             I_spin = model.NewIntervalVar(S_A, spin_occ_size, E_H, f'I_spin_{i}')
             spin_intervals.append(I_spin)
 
-            # 4. 加热台占用区间 (从 S_H 开始算占用，物理上此时机械臂已开始把玻璃往加热台上放)
+            # 4. Reserve heater occupancy from S_H, when transfer toward the heater starts.
             heat_occ_size = model.NewIntVar(t_heat + threadController.t_H1, horizon, f'heat_occ_size_{i}')
-            model.Add(heat_occ_size == S_T - S_H)  # 覆盖从放玻璃到取玻璃的全过程
+            model.Add(heat_occ_size == S_T - S_H)  # Cover the complete placement-to-pickup interval.
             I_heat = model.NewIntervalVar(S_H, heat_occ_size, S_T, f'I_heat_{i}')
             heat_intervals.append(I_heat)
             heat_demands.append(1)
 
-            # 保存关键时间戳
+            # Store key timestamps.
             jobs[i] = {'S_A': S_A, 'S_H': S_H, 'S_T': S_T, 'E_T': E_T, 'glass_id' : paramList[i]['glass_id']}
 
-        # 5. 全局资源约束
-        model.AddNoOverlap(arm_intervals)  # 机械臂一次只能做一个动作
-        model.AddNoOverlap(spin_intervals)  # 旋涂仪一次只能处理一片玻璃
-        model.AddCumulative(heat_intervals, heat_demands, threadController.cap_heater)  # 加热台容量限制
+        # 5. Enforce global resource constraints.
+        model.AddNoOverlap(arm_intervals)  # The arm performs only one action at a time.
+        model.AddNoOverlap(spin_intervals)  # The spin coater processes only one glass at a time.
+        model.AddCumulative(heat_intervals, heat_demands, threadController.cap_heater)  # Limit heater capacity.
 
-        # 6. 打破对称性：按上料时间顺序处理玻璃
+        # 6. Break symmetry by ordering glasses by loading time.
         for i in range(num_glasses - 1):
             model.Add(jobs[i]['S_A'] < jobs[i + 1]['S_A'])
 
-        # 7. 目标：最小化最大完工时间
+        # 7. Minimize maximum completion time.
         makespan = model.NewIntVar(0, horizon, 'makespan')
         model.AddMaxEquality(makespan, [jobs[i]['E_T'] for i in range(num_glasses)])
         model.Minimize(makespan)
 
-        # 求解
+        # Solve the model.
         solver = cp_model.CpSolver()
         status = solver.Solve(model)
 

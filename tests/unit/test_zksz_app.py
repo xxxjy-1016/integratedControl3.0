@@ -23,7 +23,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class ZkszWorkflowTests(unittest.TestCase):
+    """Group checks for zksz workflow tests."""
     def test_preserves_old_code_process_parameters(self) -> None:
+        """Check preserves old code process parameters."""
         self.assertEqual((97.7, 1.8, 99.0), (TIP_1.x, TIP_1.y, TIP_1.pipette_z))
         self.assertEqual(
             (46.5, 65.5, 87.0),
@@ -66,6 +68,7 @@ class ZkszWorkflowTests(unittest.TestCase):
         self.assertEqual(64.0, GLASS_RELEASE_OPENING)
 
     def test_full_workflow_runs_through_new_device_interfaces(self) -> None:
+        """Check full workflow runs through new device interfaces."""
         application = build_application(PROJECT_ROOT, mode="simulation")
         with redirect_stdout(io.StringIO()):
             self.assertTrue(application.controller.start().success)
@@ -85,6 +88,7 @@ class ZkszWorkflowTests(unittest.TestCase):
         application.controller.shutdown()
 
     def test_bottle_opening_continues_without_cap_during_bench_test(self) -> None:
+        """Check bottle opening continues without cap during bench test."""
         application = build_application(PROJECT_ROOT, mode="simulation")
         workflow = ZkszWorkflow(application, sleep=lambda _seconds: None)
         with redirect_stdout(io.StringIO()):
@@ -100,6 +104,7 @@ class ZkszWorkflowTests(unittest.TestCase):
         application.controller.shutdown()
 
     def test_workflow_disables_liquid_requirement_during_bench_test(self) -> None:
+        """Check workflow disables liquid requirement during bench test."""
         application = build_application(PROJECT_ROOT, mode="simulation")
         workflow = ZkszWorkflow(application, sleep=lambda _seconds: None)
         observed: dict[str, bool] = {}
@@ -113,6 +118,7 @@ class ZkszWorkflowTests(unittest.TestCase):
                 *,
                 require_liquid_detection: bool = True,
             ) -> ActionResult:
+                """Record policy."""
                 observed["required"] = require_liquid_detection
                 return original_aspirate(
                     volume_ul,

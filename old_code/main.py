@@ -12,6 +12,7 @@ curTask = 0
 window = None
 
 def getTasks():
+    """Get tasks."""
     while True:
         global window
         global tasksList
@@ -19,6 +20,7 @@ def getTasks():
         time.sleep(0.1)
 
 def operatingTasks():
+    """Operating tasks."""
     while True:
         global curTask
         while curTask < len(tasksList):
@@ -28,6 +30,7 @@ def operatingTasks():
         time.sleep(0.1)
 
 def App_related_code():
+    """App related code."""
     pass
     # app = ui.QApplication(sys.argv)
 

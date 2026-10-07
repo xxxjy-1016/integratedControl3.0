@@ -1,4 +1,4 @@
-# 测试滑轨移动1cm
+# Test a 1 cm stage movement.
 import sys
 sys.path.insert(0, 'D:/anaconda/python_files/python_test/integratedControl2.0')
 import leg2
@@ -7,22 +7,22 @@ import time
 leg = leg2.controller('COM8')
 print('串口打开成功')
 
-# 初始化
+# Initialize.
 print('初始化...')
 leg.init()
 print('初始化完成')
 
-# 设置
+# Configure.
 print('设置...')
 leg.set()
 print('设置完成')
 
-# 移动1cm (y方向，因为x方向已经超时过)
+# Move 1 cm along Y because X previously timed out.
 print('移动y轴到10...')
 leg.moveTo_y(10)
 print('移动命令发送完成')
 
-# 等待
+# Wait.
 print('等待y轴到位...')
 try:
     leg.wait_y()

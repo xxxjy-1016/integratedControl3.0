@@ -20,7 +20,9 @@ from integrated_control.infrastructure.transports.modbus_rtu import (
 
 
 class FakeHandlingTransport:
+    """Group checks for fake handling transport."""
     def __init__(self, *, liquid_detected: bool = True) -> None:
+        """Initialize fake handling transport dependencies and internal state."""
         self.opened = False
         self.closed = False
         self.writes: list[bytes] = []
@@ -32,12 +34,15 @@ class FakeHandlingTransport:
         self.liquid_detected = liquid_detected
 
     def open(self) -> None:
+        """Open."""
         self.opened = True
 
     def close(self) -> None:
+        """Close."""
         self.closed = True
 
     def write(self, request: bytes, *, reset_buffers: bool = True) -> None:
+        """Write."""
         self.writes.append(request)
 
     def transact(
@@ -47,6 +52,7 @@ class FakeHandlingTransport:
         response_size: int = 256,
         reset_buffers: bool = True,
     ) -> bytes:
+        """Transact."""
         self.writes.append(request)
         if request.startswith(b">"):
             if request == b">02d4819":
@@ -88,12 +94,15 @@ class FakeHandlingTransport:
         raise AssertionError(f"Unexpected request: {request!r}")
 
     def transact_exact(self, request: bytes, *, response_size: int) -> bytes:
+        """Transact exact."""
         response = self.transact(request, response_size=response_size)
         return response[:response_size]
 
 
 class NativeGripperDriverTests(unittest.TestCase):
+    """Group checks for native gripper driver tests."""
     def test_initializes_and_controls_all_three_axes(self) -> None:
+        """Check initializes and controls all three axes."""
         transport = FakeHandlingTransport()
         driver = GripperDriver(
             transport,
@@ -116,6 +125,7 @@ class NativeGripperDriverTests(unittest.TestCase):
         self.assertTrue(any(command.startswith(b">02D") for command in transport.writes))
 
     def test_rejects_out_of_range_requests_without_writing(self) -> None:
+        """Check rejects out of range requests without writing."""
         transport = FakeHandlingTransport()
         driver = GripperDriver(transport)
         driver.initialize()
@@ -127,7 +137,9 @@ class NativeGripperDriverTests(unittest.TestCase):
 
 
 class NativePipetteDriverTests(unittest.TestCase):
+    """Group checks for native pipette driver tests."""
     def test_tip_liquid_and_z_state_are_tracked(self) -> None:
+        """Check tip liquid and z state are tracked."""
         transport = FakeHandlingTransport()
         driver = PipetteDriver(
             transport,
@@ -146,6 +158,7 @@ class NativePipetteDriverTests(unittest.TestCase):
         self.assertIn(b">02Q5FD9", transport.writes)
 
     def test_requires_tip_and_enforces_capacity(self) -> None:
+        """Check requires tip and enforces capacity."""
         transport = FakeHandlingTransport()
         driver = PipetteDriver(transport)
         driver.initialize()
@@ -155,6 +168,7 @@ class NativePipetteDriverTests(unittest.TestCase):
         self.assertEqual("PIPETTE_CAPACITY", driver.aspirate(1001).error_code)
 
     def test_dry_run_can_continue_without_real_liquid(self) -> None:
+        """Check dry run can continue without real liquid."""
         transport = FakeHandlingTransport(liquid_detected=False)
         driver = PipetteDriver(
             transport,
@@ -176,7 +190,9 @@ class NativePipetteDriverTests(unittest.TestCase):
 
 
 class NativeValveDriverTests(unittest.TestCase):
+    """Group checks for native valve driver tests."""
     def test_initialization_and_stop_leave_valve_closed(self) -> None:
+        """Check initialization and stop leave valve closed."""
         transport = FakeHandlingTransport()
         driver = ValveDriver(ModbusRtuClient(transport))
 
@@ -190,10 +206,13 @@ class NativeValveDriverTests(unittest.TestCase):
 
 
 class AsciiProtocolTests(unittest.TestCase):
+    """Group checks for ascii protocol tests."""
     def test_known_initialization_crc_matches_legacy_protocol(self) -> None:
+        """Check known initialization crc matches legacy protocol."""
         self.assertEqual(b">02G9158", append_ascii_crc(b">02G"))
 
     def test_motion_data_preserves_legacy_lower_case_hex_format(self) -> None:
+        """Check motion data preserves legacy lower case hex format."""
         self.assertEqual(
             b">02D00000bb82C60",
             signed_hex_command(b">02D", 3000, width=4),

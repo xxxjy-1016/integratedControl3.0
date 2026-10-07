@@ -11,20 +11,25 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class DeviceDiagnosticsTests(unittest.TestCase):
+    """Group checks for device diagnostics tests."""
     def setUp(self) -> None:
+        """Set up."""
         self.controller = build_device_diagnostics(
             PROJECT_ROOT, mode="simulation"
         )
         self.assertTrue(self.controller.initialize().success)
 
     def tearDown(self) -> None:
+        """Tear down."""
         self.controller.shutdown()
 
     def execute(self, command: str) -> bool:
+        """Execute."""
         with redirect_stdout(io.StringIO()):
             return execute_command(self.controller, command)
 
     def test_controls_all_non_motion_devices(self) -> None:
+        """Check controls all non motion devices."""
         for command in (
             "gz 20",
             "gopening 80",
@@ -63,6 +68,7 @@ class DeviceDiagnosticsTests(unittest.TestCase):
         self.assertFalse(states["valve"].measurements["is_open"])
 
     def test_optional_arguments_and_command_validation(self) -> None:
+        """Check optional arguments and command validation."""
         self.assertTrue(self.execute("gclose"))
         self.assertTrue(self.execute("tip tip-02"))
         self.assertTrue(self.execute("aspirate 20"))
@@ -74,6 +80,7 @@ class DeviceDiagnosticsTests(unittest.TestCase):
             self.execute("tip")
 
     def test_motion_commands_delegate_to_stage_and_sensor_interfaces(self) -> None:
+        """Check motion commands delegate to stage and sensor interfaces."""
         for command in ("setx 2", "mx 10", "jx -3", "rx 12", "sx"):
             self.assertTrue(self.execute(command), command)
 
@@ -81,6 +88,7 @@ class DeviceDiagnosticsTests(unittest.TestCase):
         self.assertEqual(10.0, self.controller.stage.get_position("x"))
 
     def test_shutdown_stops_every_registered_device(self) -> None:
+        """Check shutdown stops every registered device."""
         self.assertTrue(self.controller.shutdown().success)
 
         states = self.controller.device_states()

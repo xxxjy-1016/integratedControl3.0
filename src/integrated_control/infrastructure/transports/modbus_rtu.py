@@ -6,14 +6,16 @@ from integrated_control.domain.errors import ProtocolError, TransportError
 
 
 class TransactionTransport(Protocol):
-    def open(self) -> None: ...
+    """Define the open, exact-length transaction, and close contract used by Modbus clients."""
+    def open(self) -> None: """Open the underlying serial connection."""; ...
 
-    def transact_exact(self, request: bytes, *, response_size: int) -> bytes: ...
+    def transact_exact(self, request: bytes, *, response_size: int) -> bytes: """Send a request and read the expected response length before the configured timeout."""; ...
 
-    def close(self) -> None: ...
+    def close(self) -> None: """Close the underlying serial connection."""; ...
 
 
 def crc16(data: bytes) -> bytes:
+    """Calculate the Modbus RTU CRC-16 checksum for the supplied bytes."""
     value = 0xFFFF
     for byte in data:
         value ^= byte
@@ -23,6 +25,7 @@ def crc16(data: bytes) -> bytes:
 
 
 class ModbusRtuClient:
+    """Encode Modbus RTU requests and validate serial responses with retry handling."""
     def __init__(
         self,
         transport: TransactionTransport,
@@ -32,6 +35,7 @@ class ModbusRtuClient:
         continuous_failure_timeout_s: float | None = None,
         retry_interval_s: float = 0.05,
     ) -> None:
+        """Initialize modbus rtu client dependencies and internal state."""
         if not 1 <= slave_id <= 247:
             raise ValueError("Modbus slave_id must be within 1..247")
         if retries < 1:
@@ -51,9 +55,11 @@ class ModbusRtuClient:
         self.recovered_error_count = 0
 
     def open(self) -> None:
+        """Open the underlying serial connection."""
         self.transport.open()
 
     def close(self) -> None:
+        """Close the underlying serial connection."""
         self.transport.close()
 
     def read_holding_registers(
@@ -63,6 +69,7 @@ class ModbusRtuClient:
         *,
         slave_id: int | None = None,
     ) -> list[int]:
+        """Read the requested Modbus holding registers and validate the response."""
         slave = slave_id or self.slave_id
         payload = bytes(
             [slave, 0x03]
@@ -95,6 +102,7 @@ class ModbusRtuClient:
         *,
         slave_id: int | None = None,
     ) -> bytes:
+        """Read register data as raw bytes after Modbus response validation."""
         registers = self.read_holding_registers(
             address, count, slave_id=slave_id
         )
@@ -107,6 +115,7 @@ class ModbusRtuClient:
         *,
         slave_id: int | None = None,
     ) -> None:
+        """Write one Modbus holding register and verify the echoed response."""
         slave = slave_id or self.slave_id
         payload = bytes(
             [slave, 0x06]
@@ -124,6 +133,7 @@ class ModbusRtuClient:
         *,
         slave_id: int | None = None,
     ) -> None:
+        """Write consecutive Modbus holding registers and verify the response."""
         slave = slave_id or self.slave_id
         registers = list(values)
         data = b"".join((value & 0xFFFF).to_bytes(2, "big") for value in registers)
@@ -150,6 +160,7 @@ class ModbusRtuClient:
         *,
         response_size: int,
     ) -> bytes:
+        """Send a Modbus request, retry eligible communication failures, and return a valid response."""
         request = payload + crc16(payload)
         last_error: Exception | None = None
         failures = 0
@@ -180,6 +191,7 @@ class ModbusRtuClient:
 
     @staticmethod
     def _validate_response(response: bytes, slave: int, function: int) -> None:
+        """Check response length, address, function, exception status, and CRC."""
         if len(response) < 5:
             raise ProtocolError(f"Incomplete Modbus response: {response.hex(' ')}")
         if crc16(response[:-2]) != response[-2:]:
